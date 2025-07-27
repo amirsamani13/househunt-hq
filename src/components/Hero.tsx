@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Bell, Zap, Target } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export const Hero = () => {
   return (
@@ -48,12 +49,16 @@ export const Hero = () => {
 
           {/* CTA buttons */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <Button variant="hero" size="lg" className="text-lg px-8 py-4">
-              Start Your Hunt
-            </Button>
-            <Button variant="outline" size="lg" className="text-lg px-8 py-4">
-              See How It Works
-            </Button>
+            <Link to="/hunt">
+              <Button variant="hero" size="lg" className="text-lg px-8 py-4">
+                Start Your Hunt
+              </Button>
+            </Link>
+            <Link to="/signup">
+              <Button variant="outline" size="lg" className="text-lg px-8 py-4">
+                See How It Works
+              </Button>
+            </Link>
           </div>
 
           {/* Social proof */}

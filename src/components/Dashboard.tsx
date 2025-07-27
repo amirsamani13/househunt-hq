@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Bell, MapPin, Heart, DollarSign, Calendar, Wifi } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const notifications = [
   {
@@ -135,9 +136,11 @@ export const Dashboard = () => {
 
           {/* CTA */}
           <div className="text-center">
-            <Button variant="hero" size="lg" className="text-lg px-8 py-4">
-              Try Your Dashboard Free
-            </Button>
+            <Link to="/hunt">
+              <Button variant="hero" size="lg" className="text-lg px-8 py-4">
+                Try Your Dashboard Free
+              </Button>
+            </Link>
           </div>
         </div>
       </div>

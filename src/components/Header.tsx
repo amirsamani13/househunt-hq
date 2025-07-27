@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Home, Menu } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export const Header = () => {
   return (
@@ -7,12 +8,12 @@ export const Header = () => {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <div className="flex items-center">
+          <Link to="/" className="flex items-center">
             <div className="w-8 h-8 bg-gradient-to-br from-primary to-secondary rounded-lg flex items-center justify-center mr-3">
               <Home className="w-5 h-5 text-white" />
             </div>
             <span className="text-xl font-bold text-foreground">HouseHunt HQ</span>
-          </div>
+          </Link>
 
           {/* Navigation */}
           <nav className="hidden md:flex items-center space-x-8">
@@ -35,9 +36,11 @@ export const Header = () => {
             <Button variant="ghost" className="hidden sm:inline-flex">
               Sign In
             </Button>
-            <Button variant="default">
-              Start Free Trial
-            </Button>
+            <Link to="/signup">
+              <Button variant="default">
+                Start Free Trial
+              </Button>
+            </Link>
             <Button variant="ghost" size="icon" className="md:hidden">
               <Menu className="w-5 h-5" />
             </Button>
