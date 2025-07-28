@@ -14,7 +14,249 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      notifications: {
+        Row: {
+          alert_id: string | null
+          id: string
+          is_read: boolean | null
+          message: string
+          property_id: string
+          sent_at: string
+          user_id: string
+        }
+        Insert: {
+          alert_id?: string | null
+          id?: string
+          is_read?: boolean | null
+          message: string
+          property_id: string
+          sent_at?: string
+          user_id: string
+        }
+        Update: {
+          alert_id?: string | null
+          id?: string
+          is_read?: boolean | null
+          message?: string
+          property_id?: string
+          sent_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "user_alerts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string
+          full_name: string | null
+          id: string
+          max_alerts: number | null
+          phone: string | null
+          subscription_end_date: string | null
+          subscription_status: string | null
+          subscription_tier: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          full_name?: string | null
+          id?: string
+          max_alerts?: number | null
+          phone?: string | null
+          subscription_end_date?: string | null
+          subscription_status?: string | null
+          subscription_tier?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          full_name?: string | null
+          id?: string
+          max_alerts?: number | null
+          phone?: string | null
+          subscription_end_date?: string | null
+          subscription_status?: string | null
+          subscription_tier?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      properties: {
+        Row: {
+          address: string | null
+          available_from: string | null
+          bathrooms: number | null
+          bedrooms: number | null
+          city: string | null
+          currency: string | null
+          description: string | null
+          external_id: string
+          features: string[] | null
+          first_seen_at: string
+          id: string
+          image_urls: string[] | null
+          is_active: boolean | null
+          last_updated_at: string
+          postal_code: string | null
+          price: number | null
+          property_type: string | null
+          source: string
+          surface_area: number | null
+          title: string
+          url: string
+        }
+        Insert: {
+          address?: string | null
+          available_from?: string | null
+          bathrooms?: number | null
+          bedrooms?: number | null
+          city?: string | null
+          currency?: string | null
+          description?: string | null
+          external_id: string
+          features?: string[] | null
+          first_seen_at?: string
+          id?: string
+          image_urls?: string[] | null
+          is_active?: boolean | null
+          last_updated_at?: string
+          postal_code?: string | null
+          price?: number | null
+          property_type?: string | null
+          source: string
+          surface_area?: number | null
+          title: string
+          url: string
+        }
+        Update: {
+          address?: string | null
+          available_from?: string | null
+          bathrooms?: number | null
+          bedrooms?: number | null
+          city?: string | null
+          currency?: string | null
+          description?: string | null
+          external_id?: string
+          features?: string[] | null
+          first_seen_at?: string
+          id?: string
+          image_urls?: string[] | null
+          is_active?: boolean | null
+          last_updated_at?: string
+          postal_code?: string | null
+          price?: number | null
+          property_type?: string | null
+          source?: string
+          surface_area?: number | null
+          title?: string
+          url?: string
+        }
+        Relationships: []
+      }
+      scraping_logs: {
+        Row: {
+          completed_at: string | null
+          error_message: string | null
+          id: string
+          new_properties: number | null
+          properties_found: number | null
+          source: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          error_message?: string | null
+          id?: string
+          new_properties?: number | null
+          properties_found?: number | null
+          source: string
+          started_at?: string
+          status: string
+        }
+        Update: {
+          completed_at?: string | null
+          error_message?: string | null
+          id?: string
+          new_properties?: number | null
+          properties_found?: number | null
+          source?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      user_alerts: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean | null
+          keywords: string[] | null
+          max_bedrooms: number | null
+          max_price: number | null
+          min_bedrooms: number | null
+          min_price: number | null
+          name: string
+          postal_codes: string[] | null
+          property_types: string[] | null
+          sources: string[] | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          keywords?: string[] | null
+          max_bedrooms?: number | null
+          max_price?: number | null
+          min_bedrooms?: number | null
+          min_price?: number | null
+          name: string
+          postal_codes?: string[] | null
+          property_types?: string[] | null
+          sources?: string[] | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          keywords?: string[] | null
+          max_bedrooms?: number | null
+          max_price?: number | null
+          min_bedrooms?: number | null
+          min_price?: number | null
+          name?: string
+          postal_codes?: string[] | null
+          property_types?: string[] | null
+          sources?: string[] | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
