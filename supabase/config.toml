@@ -1,1 +1,7 @@
 project_id = "oxdneiaojgwezxltivcl"
+
+[functions.scrape-properties]
+verify_jwt = false
+
+[functions.send-notifications]
+verify_jwt = false
