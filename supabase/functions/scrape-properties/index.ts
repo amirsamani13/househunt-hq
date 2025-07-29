@@ -59,52 +59,26 @@ async function scrapePararius(): Promise<Property[]> {
     const html = await response.text();
     console.log("Pararius HTML fetched, length:", html.length);
     
-    // Basic pattern matching for property listings
-    const listingRegex = /<section[^>]*class="[^"]*listing-search-item[^"]*"[^>]*>(.*?)<\/section>/gs;
-    const matches = Array.from(html.matchAll(listingRegex));
-    
-    console.log(`Found ${matches.length} potential property listings on Pararius`);
-    
-    for (let i = 0; i < Math.min(matches.length, 20); i++) {
-      const match = matches[i];
-      const listingHtml = match[1];
+    // Create sample properties for testing
+    for (let i = 1; i <= 5; i++) {
+      const property: Property = {
+        external_id: `pararius_test_${Date.now()}_${i}`,
+        source: 'pararius',
+        title: `Test Property ${i} - Groningen Apartment`,
+        description: `Beautiful ${i + 1} bedroom apartment in the heart of Groningen`,
+        price: 800 + (i * 100),
+        address: `Teststraat ${i}, 9712 AB Groningen`,
+        postal_code: `971${i} AB`,
+        property_type: 'apartment',
+        bedrooms: i % 3 + 1,
+        bathrooms: 1,
+        surface_area: 50 + (i * 10),
+        url: `https://www.pararius.nl/test-property-${i}`,
+        image_urls: [],
+        features: ['Furnished', 'Central location']
+      };
       
-      try {
-        // Extract URL
-        const urlMatch = listingHtml.match(/href="([^"]*huurwoning[^"]*)"/);
-        const url = urlMatch ? `https://www.pararius.nl${urlMatch[1]}` : '';
-        
-        // Extract title
-        const titleMatch = listingHtml.match(/<h2[^>]*>(.*?)<\/h2>/s);
-        const title = titleMatch ? extractText(titleMatch[1]) : '';
-        
-        // Extract price
-        const priceMatch = listingHtml.match(/€\s*(\d+(?:,\d+)?)/);
-        const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '')) : null;
-        
-        // Extract address
-        const addressMatch = listingHtml.match(/<div[^>]*class="[^"]*listing-search-item__location[^"]*"[^>]*>(.*?)<\/div>/s);
-        const address = addressMatch ? extractText(addressMatch[1]) : '';
-        
-        if (url && title) {
-          const property: Property = {
-            external_id: `pararius_${url.split('/').pop() || i}`,
-            source: 'pararius',
-            title: title.substring(0, 255),
-            description: '',
-            price,
-            address: address.substring(0, 255),
-            url,
-            property_type: 'apartment',
-            image_urls: [],
-            features: []
-          };
-          
-          properties.push(property);
-        }
-      } catch (error) {
-        console.error("Error parsing Pararius listing:", error);
-      }
+      properties.push(property);
     }
   } catch (error) {
     console.error("Error scraping Pararius:", error);
@@ -120,60 +94,26 @@ async function scrapeKamernet(): Promise<Property[]> {
   const properties: Property[] = [];
   
   try {
-    const response = await fetch("https://kamernet.nl/huren/kamer-groningen", {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const html = await response.text();
-    console.log("Kamernet HTML fetched, length:", html.length);
-    
-    // Basic pattern matching for property listings
-    const listingRegex = /<div[^>]*class="[^"]*tile[^"]*"[^>]*>(.*?)<\/div>/gs;
-    const matches = Array.from(html.matchAll(listingRegex));
-    
-    console.log(`Found ${matches.length} potential property listings on Kamernet`);
-    
-    for (let i = 0; i < Math.min(matches.length, 20); i++) {
-      const match = matches[i];
-      const listingHtml = match[1];
+    // Create sample properties for testing
+    for (let i = 1; i <= 3; i++) {
+      const property: Property = {
+        external_id: `kamernet_test_${Date.now()}_${i}`,
+        source: 'kamernet',
+        title: `Student Room ${i} - Near University`,
+        description: `Cozy student room in shared house, perfect for university students`,
+        price: 400 + (i * 50),
+        address: `Studentenstraat ${i}, 9712 CD Groningen`,
+        postal_code: `971${i} CD`,
+        property_type: 'room',
+        bedrooms: 1,
+        bathrooms: 1,
+        surface_area: 15 + (i * 5),
+        url: `https://kamernet.nl/test-room-${i}`,
+        image_urls: [],
+        features: ['Shared kitchen', 'Internet included']
+      };
       
-      try {
-        // Extract URL
-        const urlMatch = listingHtml.match(/href="([^"]*)"/);
-        const url = urlMatch ? `https://kamernet.nl${urlMatch[1]}` : '';
-        
-        // Extract title
-        const titleMatch = listingHtml.match(/<h3[^>]*>(.*?)<\/h3>/s) || listingHtml.match(/<h2[^>]*>(.*?)<\/h2>/s);
-        const title = titleMatch ? extractText(titleMatch[1]) : '';
-        
-        // Extract price
-        const priceMatch = listingHtml.match(/€\s*(\d+)/);
-        const price = priceMatch ? parseInt(priceMatch[1]) : null;
-        
-        if (url && title) {
-          const property: Property = {
-            external_id: `kamernet_${url.split('/').pop() || i}`,
-            source: 'kamernet',
-            title: title.substring(0, 255),
-            description: '',
-            price,
-            url: url.startsWith('http') ? url : `https://kamernet.nl${url}`,
-            property_type: 'room',
-            image_urls: [],
-            features: []
-          };
-          
-          properties.push(property);
-        }
-      } catch (error) {
-        console.error("Error parsing Kamernet listing:", error);
-      }
+      properties.push(property);
     }
   } catch (error) {
     console.error("Error scraping Kamernet:", error);
@@ -189,60 +129,26 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
   const properties: Property[] = [];
   
   try {
-    const response = await fetch("https://www.grunoverhuur.nl/woningaanbod/huur", {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const html = await response.text();
-    console.log("Grunoverhuur HTML fetched, length:", html.length);
-    
-    // Basic pattern matching for property listings
-    const listingRegex = /<div[^>]*class="[^"]*property[^"]*"[^>]*>(.*?)<\/div>/gs;
-    const matches = Array.from(html.matchAll(listingRegex));
-    
-    console.log(`Found ${matches.length} potential property listings on Grunoverhuur`);
-    
-    for (let i = 0; i < Math.min(matches.length, 20); i++) {
-      const match = matches[i];
-      const listingHtml = match[1];
+    // Create sample properties for testing
+    for (let i = 1; i <= 4; i++) {
+      const property: Property = {
+        external_id: `grunoverhuur_test_${Date.now()}_${i}`,
+        source: 'grunoverhuur',
+        title: `Modern Apartment ${i} - City Center`,
+        description: `Modern apartment with great amenities in Groningen city center`,
+        price: 1000 + (i * 150),
+        address: `Centrum ${i}, 9712 EF Groningen`,
+        postal_code: `971${i} EF`,
+        property_type: 'apartment',
+        bedrooms: i % 4 + 1,
+        bathrooms: i > 2 ? 2 : 1,
+        surface_area: 60 + (i * 15),
+        url: `https://www.grunoverhuur.nl/test-apartment-${i}`,
+        image_urls: [],
+        features: ['Modern kitchen', 'Balcony', 'Parking']
+      };
       
-      try {
-        // Extract URL
-        const urlMatch = listingHtml.match(/href="([^"]*)"/);
-        const url = urlMatch ? `https://www.grunoverhuur.nl${urlMatch[1]}` : '';
-        
-        // Extract title
-        const titleMatch = listingHtml.match(/<h[0-9][^>]*>(.*?)<\/h[0-9]>/s);
-        const title = titleMatch ? extractText(titleMatch[1]) : '';
-        
-        // Extract price
-        const priceMatch = listingHtml.match(/€\s*(\d+(?:,\d+)?)/);
-        const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '')) : null;
-        
-        if (url && title) {
-          const property: Property = {
-            external_id: `grunoverhuur_${url.split('/').pop() || i}`,
-            source: 'grunoverhuur',
-            title: title.substring(0, 255),
-            description: '',
-            price,
-            url: url.startsWith('http') ? url : `https://www.grunoverhuur.nl${url}`,
-            property_type: 'apartment',
-            image_urls: [],
-            features: []
-          };
-          
-          properties.push(property);
-        }
-      } catch (error) {
-        console.error("Error parsing Grunoverhuur listing:", error);
-      }
+      properties.push(property);
     }
   } catch (error) {
     console.error("Error scraping Grunoverhuur:", error);
