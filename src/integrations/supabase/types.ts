@@ -70,6 +70,8 @@ export type Database = {
           subscription_end_date: string | null
           subscription_status: string | null
           subscription_tier: string | null
+          trial_start_date: string | null
+          trial_used: boolean | null
           updated_at: string
           user_id: string
         }
@@ -83,6 +85,8 @@ export type Database = {
           subscription_end_date?: string | null
           subscription_status?: string | null
           subscription_tier?: string | null
+          trial_start_date?: string | null
+          trial_used?: boolean | null
           updated_at?: string
           user_id: string
         }
@@ -96,6 +100,8 @@ export type Database = {
           subscription_end_date?: string | null
           subscription_status?: string | null
           subscription_tier?: string | null
+          trial_start_date?: string | null
+          trial_used?: boolean | null
           updated_at?: string
           user_id?: string
         }
@@ -203,6 +209,45 @@ export type Database = {
           source?: string
           started_at?: string
           status?: string
+        }
+        Relationships: []
+      }
+      subscribers: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          stripe_customer_id: string | null
+          subscribed: boolean
+          subscription_end: string | null
+          subscription_tier: string | null
+          trial_end: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          stripe_customer_id?: string | null
+          subscribed?: boolean
+          subscription_end?: string | null
+          subscription_tier?: string | null
+          trial_end?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          stripe_customer_id?: string | null
+          subscribed?: boolean
+          subscription_end?: string | null
+          subscription_tier?: string | null
+          trial_end?: string | null
+          updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
