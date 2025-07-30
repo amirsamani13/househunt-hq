@@ -44,6 +44,11 @@ export const Header = () => {
             <a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">
               Contact
             </a>
+            {user && (
+              <Link to="/test" className="text-muted-foreground hover:text-foreground transition-colors">
+                Test Scraping
+              </Link>
+            )}
           </nav>
 
           {/* CTA Buttons */}

@@ -29,40 +29,61 @@ export default function TestPage() {
     setResults(null);
     
     try {
-      // Call the scrape-properties edge function
-      const { data, error } = await supabase.functions.invoke('scrape-properties');
-      
-      if (error) {
-        throw error;
-      }
-      
-      setResults(data);
-      
-      // Fetch latest properties to show results
-      const { data: propertiesData, error: propertiesError } = await supabase
-        .from('properties')
-        .select('*')
-        .order('first_seen_at', { ascending: false })
-        .limit(10);
-        
-      if (propertiesError) {
-        console.error('Error fetching properties:', propertiesError);
-      } else {
-        setProperties(propertiesData || []);
-      }
-      
       toast({
-        title: "Scraping Completed!",
-        description: `Found ${data.totalNewProperties} new properties`,
+        title: "Scraping Started",
+        description: "Property scraping is now running in the background...",
       });
+
+      // Call the scrape-properties edge function without blocking UI
+      const scrapePromise = supabase.functions.invoke('scrape-properties');
+      
+      // Allow UI to update immediately
+      setTimeout(async () => {
+        try {
+          const { data, error } = await scrapePromise;
+          
+          if (error) {
+            throw error;
+          }
+          
+          setResults(data);
+          
+          // Fetch latest properties to show results
+          const { data: propertiesData, error: propertiesError } = await supabase
+            .from('properties')
+            .select('*')
+            .order('first_seen_at', { ascending: false })
+            .limit(10);
+            
+          if (propertiesError) {
+            console.error('Error fetching properties:', propertiesError);
+          } else {
+            setProperties(propertiesData || []);
+          }
+          
+          toast({
+            title: "Scraping Completed!",
+            description: `Found ${data?.totalNewProperties || 0} new properties`,
+          });
+        } catch (error: any) {
+          console.error('Scraping error:', error);
+          toast({
+            title: "Scraping Failed",
+            description: error.message || "Failed to scrape properties",
+            variant: "destructive",
+          });
+        } finally {
+          setIsLoading(false);
+        }
+      }, 100);
+      
     } catch (error: any) {
       console.error('Scraping error:', error);
       toast({
         title: "Scraping Failed",
-        description: error.message || "Failed to scrape properties",
+        description: error.message || "Failed to start scraping",
         variant: "destructive",
       });
-    } finally {
       setIsLoading(false);
     }
   };
