@@ -137,13 +137,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setSubscriptionStatus({
-      subscribed: false,
-      tier: 'free',
-      isTrialActive: false,
-      trialEndsAt: null,
-    });
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Sign out error:', error);
+      }
+      // Always reset state regardless of API call success
+      setUser(null);
+      setSession(null);
+      setSubscriptionStatus({
+        subscribed: false,
+        tier: 'free',
+        isTrialActive: false,
+        trialEndsAt: null,
+      });
+      // Clear local storage to fix refresh token issues
+      localStorage.removeItem('supabase.auth.token');
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
   };
 
   const value = {
