@@ -105,12 +105,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.email);
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
         
         if (session?.user) {
-          await checkSubscriptionForUser(session.user.id);
+          // Use setTimeout to avoid deadlock
+          setTimeout(() => {
+            checkSubscriptionForUser(session.user.id);
+          }, 0);
         } else {
           setSubscriptionStatus({
             subscribed: false,
@@ -124,12 +128,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Get initial session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      console.log('Initial session check:', session?.user?.email);
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
       
       if (session?.user) {
-        await checkSubscriptionForUser(session.user.id);
+        setTimeout(() => {
+          checkSubscriptionForUser(session.user.id);
+        }, 0);
       }
     });
 
@@ -138,11 +145,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signOut = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('Sign out error:', error);
-      }
-      // Always reset state regardless of API call success
+      console.log('Signing out user...');
+      
+      // First, clear the local state
       setUser(null);
       setSession(null);
       setSubscriptionStatus({
@@ -151,8 +156,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         isTrialActive: false,
         trialEndsAt: null,
       });
-      // Clear local storage to fix refresh token issues
+      
+      // Clear any stored tokens
       localStorage.removeItem('supabase.auth.token');
+      localStorage.removeItem('sb-oxdneiaojgwezxltivcl-auth-token');
+      
+      // Then call the API
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Sign out API error:', error);
+        // Don't throw here as we've already cleared the local state
+      }
+      
+      console.log('Sign out completed');
     } catch (error) {
       console.error('Sign out error:', error);
     }

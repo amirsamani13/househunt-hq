@@ -46,12 +46,17 @@ export default function AuthPage() {
       });
 
       if (error) {
-        if (error.message.includes('already registered')) {
+        if (error.message.includes('already registered') || error.message.includes('User already registered')) {
           toast({
             title: "Account exists",
             description: "This email is already registered. Please sign in instead.",
             variant: "destructive",
           });
+          // Automatically switch to sign in tab
+          setTimeout(() => {
+            const signInTab = document.querySelector('[value="signin"]') as HTMLElement;
+            if (signInTab) signInTab.click();
+          }, 1000);
         } else {
           throw error;
         }
