@@ -4,9 +4,85 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, MapPin, DollarSign, Home, Bed, Bath, Car } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function HuntPage() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const [formData, setFormData] = useState({
+    location: "",
+    minPrice: "",
+    maxPrice: "",
+    bedrooms: "",
+    bathrooms: "",
+    propertyType: "Any"
+  });
+  const [loading, setLoading] = useState(false);
+
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleStartMonitoring = async () => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please sign in to create property alerts.",
+        variant: "destructive"
+      });
+      navigate("/auth");
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      const alertData = {
+        user_id: user.id,
+        name: `${formData.location || "Any Location"} Search`,
+        min_price: formData.minPrice ? parseFloat(formData.minPrice) : null,
+        max_price: formData.maxPrice ? parseFloat(formData.maxPrice) : null,
+        min_bedrooms: formData.bedrooms ? parseInt(formData.bedrooms) : null,
+        property_types: formData.propertyType !== "Any" ? [formData.propertyType.toLowerCase()] : null,
+      };
+
+      const { error } = await supabase
+        .from('user_alerts')
+        .insert([alertData]);
+
+      if (error) throw error;
+
+      toast({
+        title: "Alert Created!",
+        description: "Your property monitoring alert has been set up successfully.",
+      });
+
+      // Reset form
+      setFormData({
+        location: "",
+        minPrice: "",
+        maxPrice: "",
+        bedrooms: "",
+        bathrooms: "",
+        propertyType: "Any"
+      });
+
+    } catch (error) {
+      console.error('Error creating alert:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create property alert. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
       {/* Header */}
@@ -36,27 +112,62 @@ export default function HuntPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="location">Location</Label>
-                <Input id="location" placeholder="City, neighborhood, or zip code" />
+                <Input 
+                  id="location" 
+                  placeholder="City, neighborhood, or zip code"
+                  value={formData.location}
+                  onChange={(e) => handleInputChange("location", e.target.value)}
+                />
               </div>
               <div>
                 <Label htmlFor="min-price">Min Price</Label>
-                <Input id="min-price" type="number" placeholder="$100,000" />
+                <Input 
+                  id="min-price" 
+                  type="number" 
+                  placeholder="100000"
+                  value={formData.minPrice}
+                  onChange={(e) => handleInputChange("minPrice", e.target.value)}
+                />
               </div>
               <div>
                 <Label htmlFor="max-price">Max Price</Label>
-                <Input id="max-price" type="number" placeholder="$500,000" />
+                <Input 
+                  id="max-price" 
+                  type="number" 
+                  placeholder="500000"
+                  value={formData.maxPrice}
+                  onChange={(e) => handleInputChange("maxPrice", e.target.value)}
+                />
               </div>
               <div>
                 <Label htmlFor="bedrooms">Min Bedrooms</Label>
-                <Input id="bedrooms" type="number" placeholder="2" min="1" />
+                <Input 
+                  id="bedrooms" 
+                  type="number" 
+                  placeholder="2" 
+                  min="1"
+                  value={formData.bedrooms}
+                  onChange={(e) => handleInputChange("bedrooms", e.target.value)}
+                />
               </div>
               <div>
                 <Label htmlFor="bathrooms">Min Bathrooms</Label>
-                <Input id="bathrooms" type="number" placeholder="1" min="1" />
+                <Input 
+                  id="bathrooms" 
+                  type="number" 
+                  placeholder="1" 
+                  min="1"
+                  value={formData.bathrooms}
+                  onChange={(e) => handleInputChange("bathrooms", e.target.value)}
+                />
               </div>
               <div>
                 <Label htmlFor="property-type">Property Type</Label>
-                <select className="w-full px-3 py-2 border border-input rounded-md">
+                <select 
+                  className="w-full px-3 py-2 border border-input rounded-md"
+                  value={formData.propertyType}
+                  onChange={(e) => handleInputChange("propertyType", e.target.value)}
+                >
                   <option>Any</option>
                   <option>House</option>
                   <option>Apartment</option>
@@ -65,8 +176,14 @@ export default function HuntPage() {
                 </select>
               </div>
             </div>
-            <Button variant="hero" size="lg" className="w-full">
-              Start Monitoring Properties
+            <Button 
+              variant="hero" 
+              size="lg" 
+              className="w-full"
+              onClick={handleStartMonitoring}
+              disabled={loading}
+            >
+              {loading ? "Creating Alert..." : "Start Monitoring Properties"}
             </Button>
           </CardContent>
         </Card>
