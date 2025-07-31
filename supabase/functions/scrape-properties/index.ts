@@ -73,7 +73,7 @@ async function scrapePararius(): Promise<Property[]> {
         bedrooms: i % 3 + 1,
         bathrooms: 1,
         surface_area: 50 + (i * 10),
-        url: `https://www.pararius.nl/test-property-${i}`,
+        url: `https://www.pararius.nl/huurwoningen/groningen`,
         image_urls: [],
         features: ['Furnished', 'Central location']
       };
@@ -108,7 +108,7 @@ async function scrapeKamernet(): Promise<Property[]> {
         bedrooms: 1,
         bathrooms: 1,
         surface_area: 15 + (i * 5),
-        url: `https://kamernet.nl/test-room-${i}`,
+        url: `https://kamernet.nl/huren/groningen`,
         image_urls: [],
         features: ['Shared kitchen', 'Internet included']
       };
@@ -143,7 +143,7 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
         bedrooms: i % 4 + 1,
         bathrooms: i > 2 ? 2 : 1,
         surface_area: 60 + (i * 15),
-        url: `https://www.grunoverhuur.nl/test-apartment-${i}`,
+        url: `https://www.grunoverhuur.nl/woningaanbod`,
         image_urls: [],
         features: ['Modern kitchen', 'Balcony', 'Parking']
       };
