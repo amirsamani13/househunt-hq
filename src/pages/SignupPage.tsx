@@ -33,7 +33,8 @@ export default function SignupPage() {
     setIsLoading(true);
 
     try {
-      const { error } = await supabase.auth.signUp({
+      console.log('Starting signup for:', email);
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -45,13 +46,18 @@ export default function SignupPage() {
         }
       });
 
+      console.log('Signup response:', { data, error });
+
       if (error) {
-        if (error.message.includes('already registered')) {
+        console.log('Signup error:', error);
+        if (error.message.includes('already registered') || error.message.includes('User already registered')) {
           toast({
             title: "Account exists",
             description: "This email is already registered. Please sign in instead.",
             variant: "destructive",
           });
+          // Redirect to auth page for sign in
+          setTimeout(() => navigate('/auth'), 1500);
         } else {
           throw error;
         }
