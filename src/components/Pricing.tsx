@@ -3,6 +3,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge";
 import { Check, Zap, Star, Crown } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const plans = [
   {
@@ -60,8 +63,41 @@ const plans = [
 ];
 
 export const Pricing = () => {
+  const { user } = useAuth();
+  const { toast } = useToast();
+
+  const handleSubscribe = async (planType: string) => {
+    if (!user) {
+      toast({
+        title: "Sign in required",
+        description: "Please sign in to subscribe to a plan.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('create-checkout', {
+        body: { plan: planType }
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        window.open(data.url, '_blank');
+      }
+    } catch (error) {
+      console.error('Error creating checkout:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create checkout session. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
-    <section className="py-24 bg-gradient-to-b from-white to-gray-50">
+    <section id="pricing" className="py-24 bg-gradient-to-b from-white to-gray-50">
       <div className="container mx-auto px-4">
         <div className="text-center mb-16">
           <h2 className="text-3xl md:text-5xl font-bold text-foreground mb-4">
@@ -119,15 +155,14 @@ export const Pricing = () => {
                 </CardContent>
 
                 <CardFooter>
-                  <Link to="/signup" className="w-full">
-                    <Button 
-                      variant={plan.buttonVariant} 
-                      size="lg" 
-                      className="w-full"
-                    >
-                      Get Started
-                    </Button>
-                  </Link>
+                  <Button 
+                    variant={plan.buttonVariant} 
+                    size="lg" 
+                    className="w-full"
+                    onClick={() => handleSubscribe(plan.name.toLowerCase())}
+                  >
+                    Get Started
+                  </Button>
                 </CardFooter>
               </Card>
             );

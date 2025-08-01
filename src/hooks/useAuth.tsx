@@ -53,6 +53,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (!user) return;
     
     try {
+      // First try to get from database
       const { data: subscriber } = await supabase
         .from('subscribers')
         .select('*')
@@ -70,6 +71,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           isTrialActive,
           trialEndsAt: subscriber.trial_end,
         });
+      }
+
+      // Also check with Stripe for the most up-to-date info
+      try {
+        const { data: stripeData, error: stripeError } = await supabase.functions.invoke('check-subscription');
+        
+        if (stripeError) {
+          console.log('Stripe check failed (this is normal if no Stripe key is set):', stripeError);
+        } else if (stripeData) {
+          const now = new Date();
+          const trialEnd = stripeData.subscription_end ? new Date(stripeData.subscription_end) : null;
+          const isTrialActive = subscriber?.trial_end ? now < new Date(subscriber.trial_end) : false;
+          
+          setSubscriptionStatus({
+            subscribed: stripeData.subscribed || isTrialActive,
+            tier: stripeData.subscription_tier || 'trial',
+            isTrialActive,
+            trialEndsAt: subscriber?.trial_end || null,
+          });
+        }
+      } catch (stripeError) {
+        console.log('Stripe integration not available:', stripeError);
       }
     } catch (error) {
       console.error('Error checking subscription:', error);
