@@ -59,14 +59,8 @@ async function scrapePararius(): Promise<Property[]> {
     const html = await response.text();
     console.log("Pararius HTML fetched, length:", html.length);
     
-    // Try multiple selectors for property listings
-    let listingMatches = html.match(/<section class="listing-search-item.*?"[\s\S]*?<\/section>/g);
-    if (!listingMatches) {
-      listingMatches = html.match(/<article class="listing.*?"[\s\S]*?<\/article>/g);
-    }
-    if (!listingMatches) {
-      listingMatches = html.match(/<div class="search-list__item.*?"[\s\S]*?<\/div>/g);
-    }
+    // Parse the HTML to extract property listings
+    const listingMatches = html.match(/<section class="listing-search-item[\s\S]*?<\/section>/g);
     
     if (listingMatches && listingMatches.length > 0) {
       console.log(`Found ${listingMatches.length} property listings`);
@@ -74,41 +68,30 @@ async function scrapePararius(): Promise<Property[]> {
       for (let i = 0; i < Math.min(listingMatches.length, 50); i++) {
         const listing = listingMatches[i];
         
-        // Extract title with multiple patterns
-        let titleMatch = listing.match(/<h2[^>]*>(.*?)<\/h2>/s);
-        if (!titleMatch) titleMatch = listing.match(/<h3[^>]*>(.*?)<\/h3>/s);
-        if (!titleMatch) titleMatch = listing.match(/class="listing-search-item__title[^"]*"[^>]*>(.*?)<\/[^>]+>/s);
-        
+        // Extract title from the actual structure
+        const titleMatch = listing.match(/<h2 class="listing-search-item__title"[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/);
         const title = titleMatch ? extractText(titleMatch[1]) : null;
         if (!title || title.length < 3) continue; // Skip if no valid title
         
-        // Extract price with multiple patterns
-        let priceMatch = listing.match(/€\s*([\d.,]+)/);
-        if (!priceMatch) priceMatch = listing.match(/(\d+)\s*euro/i);
-        const price = priceMatch ? parseFloat(priceMatch[1].replace(/[.,]/g, '')) : null;
+        // Extract price from the specific price div
+        const priceMatch = listing.match(/<div class="listing-search-item__price"[^>]*>€\s*(\d+)/);
+        const price = priceMatch ? parseInt(priceMatch[1]) : null;
         
-        // Extract location/address
-        let locationMatch = listing.match(/<div class="listing-search-item__location[^"]*"[^>]*>(.*?)<\/div>/s);
-        if (!locationMatch) locationMatch = listing.match(/class="address[^"]*"[^>]*>(.*?)<\/[^>]+>/s);
-        if (!locationMatch) locationMatch = listing.match(/Groningen[^<]*/);
+        // Extract address from sub-title div
+        const addressMatch = listing.match(/<div class="listing-search-item__sub-title"[^>]*>(.*?)<\/div>/);
+        const address = addressMatch ? extractText(addressMatch[1]) : 'Groningen';
         
-        const address = locationMatch ? extractText(locationMatch[1]) : 'Groningen';
+        // Extract URL from the actual link structure
+        const urlMatch = listing.match(/href="(https:\/\/www\.pararius\.nl\/[^"]+)"/);
+        const url = urlMatch ? urlMatch[1] : `https://www.pararius.nl/huurwoningen/groningen`;
         
-        // Extract URL with multiple patterns
-        let urlMatch = listing.match(/href="([^"]*pararius[^"]*)"/);
-        if (!urlMatch) urlMatch = listing.match(/href="(\/huurwoningen\/[^"]*)"/);
-        
-        const url = urlMatch ? 
-          (urlMatch[1].startsWith('http') ? urlMatch[1] : `https://www.pararius.nl${urlMatch[1]}`) : 
-          `https://www.pararius.nl/huurwoningen/groningen`;
-        
-        // Extract surface area
-        const surfaceMatch = listing.match(/(\d+)\s*m²/);
+        // Extract surface area from the features list
+        const surfaceMatch = listing.match(/<li class="illustrated-features__item illustrated-features__item--surface-area">(\d+)\s*m²<\/li>/);
         const surface_area = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
         
-        // Extract bedrooms
-        const bedroomsMatch = listing.match(/(\d+)\s*(?:bedroom|slaapkamer|room)/i);
-        const bedrooms = bedroomsMatch ? parseInt(bedroomsMatch[1]) : null;
+        // Extract room count (bedrooms)
+        const roomMatch = listing.match(/<li class="illustrated-features__item illustrated-features__item--number-of-rooms">(\d+)\s*(?:kamer|room)/);
+        const bedrooms = roomMatch ? parseInt(roomMatch[1]) : null;
         
         // Only add properties with valid data
         if (title && title.length > 3) {
