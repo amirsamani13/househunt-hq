@@ -59,83 +59,95 @@ async function scrapePararius(): Promise<Property[]> {
     const html = await response.text();
     console.log("Pararius HTML fetched, length:", html.length);
     
-    // Parse the HTML to extract property listings
-    const listingMatches = html.match(/<section class="listing-search-item.*?"[\s\S]*?<\/section>/g);
+    // Try multiple selectors for property listings
+    let listingMatches = html.match(/<section class="listing-search-item.*?"[\s\S]*?<\/section>/g);
+    if (!listingMatches) {
+      listingMatches = html.match(/<article class="listing.*?"[\s\S]*?<\/article>/g);
+    }
+    if (!listingMatches) {
+      listingMatches = html.match(/<div class="search-list__item.*?"[\s\S]*?<\/div>/g);
+    }
     
-    if (listingMatches) {
-      for (let i = 0; i < Math.min(listingMatches.length, 20); i++) {
+    if (listingMatches && listingMatches.length > 0) {
+      console.log(`Found ${listingMatches.length} property listings`);
+      
+      for (let i = 0; i < Math.min(listingMatches.length, 50); i++) {
         const listing = listingMatches[i];
         
-        // Extract title
-        const titleMatch = listing.match(/<h2.*?>(.*?)<\/h2>/);
-        const title = titleMatch ? extractText(titleMatch[1]) : `Property ${i + 1}`;
+        // Extract title with multiple patterns
+        let titleMatch = listing.match(/<h2[^>]*>(.*?)<\/h2>/s);
+        if (!titleMatch) titleMatch = listing.match(/<h3[^>]*>(.*?)<\/h3>/s);
+        if (!titleMatch) titleMatch = listing.match(/class="listing-search-item__title[^"]*"[^>]*>(.*?)<\/[^>]+>/s);
         
-        // Extract price
-        const priceMatch = listing.match(/€\s*([\d.,]+)/);
+        const title = titleMatch ? extractText(titleMatch[1]) : null;
+        if (!title || title.length < 3) continue; // Skip if no valid title
+        
+        // Extract price with multiple patterns
+        let priceMatch = listing.match(/€\s*([\d.,]+)/);
+        if (!priceMatch) priceMatch = listing.match(/(\d+)\s*euro/i);
         const price = priceMatch ? parseFloat(priceMatch[1].replace(/[.,]/g, '')) : null;
         
-        // Extract location
-        const locationMatch = listing.match(/<div class="listing-search-item__location".*?>(.*?)<\/div>/);
+        // Extract location/address
+        let locationMatch = listing.match(/<div class="listing-search-item__location[^"]*"[^>]*>(.*?)<\/div>/s);
+        if (!locationMatch) locationMatch = listing.match(/class="address[^"]*"[^>]*>(.*?)<\/[^>]+>/s);
+        if (!locationMatch) locationMatch = listing.match(/Groningen[^<]*/);
+        
         const address = locationMatch ? extractText(locationMatch[1]) : 'Groningen';
         
-        // Extract URL
-        const urlMatch = listing.match(/href="([^"]*pararius[^"]*)"/);
-        const url = urlMatch ? `https://www.pararius.nl${urlMatch[1]}` : `https://www.pararius.nl/huurwoningen/groningen`;
+        // Extract URL with multiple patterns
+        let urlMatch = listing.match(/href="([^"]*pararius[^"]*)"/);
+        if (!urlMatch) urlMatch = listing.match(/href="(\/huurwoningen\/[^"]*)"/);
+        
+        const url = urlMatch ? 
+          (urlMatch[1].startsWith('http') ? urlMatch[1] : `https://www.pararius.nl${urlMatch[1]}`) : 
+          `https://www.pararius.nl/huurwoningen/groningen`;
         
         // Extract surface area
         const surfaceMatch = listing.match(/(\d+)\s*m²/);
         const surface_area = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
         
-        const property: Property = {
-          external_id: `pararius_${Date.now()}_${i}`,
-          source: 'pararius',
-          title: title.substring(0, 200),
-          description: `Property in Groningen - ${title}`,
-          price,
-          address: address.substring(0, 200),
-          postal_code: extractPostalCode(address),
-          property_type: 'apartment',
-          bedrooms: extractBedroomCount(listing),
-          bathrooms: 1,
-          surface_area,
-          url,
-          image_urls: extractImageUrls(listing),
-          features: extractFeatures(listing)
-        };
+        // Extract bedrooms
+        const bedroomsMatch = listing.match(/(\d+)\s*(?:bedroom|slaapkamer|room)/i);
+        const bedrooms = bedroomsMatch ? parseInt(bedroomsMatch[1]) : null;
         
-        properties.push(property);
+        // Only add properties with valid data
+        if (title && title.length > 3) {
+          const property: Property = {
+            external_id: `pararius_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`,
+            source: 'pararius',
+            title: title.substring(0, 200),
+            description: `Property in Groningen - ${title}`,
+            price,
+            address: address.substring(0, 200),
+            postal_code: extractPostalCode(address),
+            property_type: 'apartment',
+            bedrooms,
+            bathrooms: 1,
+            surface_area,
+            url,
+            image_urls: extractImageUrls(listing),
+            features: extractFeatures(listing)
+          };
+          
+          properties.push(property);
+        }
       }
     }
     
-    // If no listings found, create fallback data
+    console.log(`Successfully parsed ${properties.length} real properties from Pararius`);
+    
+    // If we still don't have properties, log the HTML structure for debugging
     if (properties.length === 0) {
-      console.log("No listings parsed, creating fallback data");
-      for (let i = 1; i <= 3; i++) {
-        const property: Property = {
-          external_id: `pararius_fallback_${Date.now()}_${i}`,
-          source: 'pararius',
-          title: `Apartment ${i} - Groningen Center`,
-          description: `Beautiful ${i + 1} bedroom apartment in Groningen`,
-          price: 800 + (i * 150),
-          address: `Centrum ${i}, 9712 AB Groningen`,
-          postal_code: `971${i} AB`,
-          property_type: 'apartment',
-          bedrooms: i % 3 + 1,
-          bathrooms: 1,
-          surface_area: 60 + (i * 10),
-          url: `https://www.pararius.nl/huurwoningen/groningen`,
-          image_urls: [],
-          features: ['Central location', 'Recently renovated']
-        };
-        properties.push(property);
-      }
+      console.log("No properties found. HTML structure sample:", html.substring(0, 1000));
+      console.log("Full HTML length:", html.length);
+      throw new Error("No valid properties could be extracted from Pararius");
     }
+    
   } catch (error) {
     console.error("Error scraping Pararius:", error);
     throw error;
   }
   
-  console.log(`Scraped ${properties.length} properties from Pararius`);
   return properties;
 }
 
@@ -226,28 +238,10 @@ async function scrapeKamernet(): Promise<Property[]> {
       }
     }
     
-    // If no listings found, create fallback data
+    // If no listings found, throw error instead of using fallback data
     if (properties.length === 0) {
-      console.log("No Kamernet listings parsed, creating fallback data");
-      for (let i = 1; i <= 3; i++) {
-        const property: Property = {
-          external_id: `kamernet_fallback_${Date.now()}_${i}`,
-          source: 'kamernet',
-          title: `Student Room ${i} - Near University`,
-          description: `Cozy student room in shared house, perfect for university students`,
-          price: 400 + (i * 50),
-          address: `Studentenstraat ${i}, 9712 CD Groningen`,
-          postal_code: `971${i} CD`,
-          property_type: 'room',
-          bedrooms: 1,
-          bathrooms: 1,
-          surface_area: 15 + (i * 5),
-          url: `https://kamernet.nl/en/for-rent/rooms-groningen`,
-          image_urls: [],
-          features: ['Shared kitchen', 'Internet included']
-        };
-        properties.push(property);
-      }
+      console.log("No Kamernet listings parsed");
+      throw new Error("No valid properties could be extracted from Kamernet");
     }
   } catch (error) {
     console.error("Error scraping Kamernet:", error);
@@ -320,28 +314,10 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
       }
     }
     
-    // If no listings found, create fallback data
+    // If no listings found, throw error instead of using fallback data  
     if (properties.length === 0) {
-      console.log("No Grunoverhuur listings parsed, creating fallback data");
-      for (let i = 1; i <= 4; i++) {
-        const property: Property = {
-          external_id: `grunoverhuur_fallback_${Date.now()}_${i}`,
-          source: 'grunoverhuur',
-          title: `Modern Apartment ${i} - City Center`,
-          description: `Modern apartment with great amenities in Groningen city center`,
-          price: 1000 + (i * 150),
-          address: `Centrum ${i}, 9712 EF Groningen`,
-          postal_code: `971${i} EF`,
-          property_type: 'apartment',
-          bedrooms: i % 4 + 1,
-          bathrooms: i > 2 ? 2 : 1,
-          surface_area: 60 + (i * 15),
-          url: `https://www.grunoverhuur.nl/woningaanbod`,
-          image_urls: [],
-          features: ['Modern kitchen', 'Balcony', 'Parking']
-        };
-        properties.push(property);
-      }
+      console.log("No Grunoverhuur listings parsed");
+      throw new Error("No valid properties could be extracted from Grunoverhuur");
     }
   } catch (error) {
     console.error("Error scraping Grunoverhuur:", error);
