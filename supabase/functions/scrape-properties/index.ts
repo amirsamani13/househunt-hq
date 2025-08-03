@@ -63,34 +63,33 @@ async function scrapePararius(): Promise<Property[]> {
     const listingMatches = html.match(/<section class="listing-search-item[\s\S]*?<\/section>/g);
     
     if (listingMatches && listingMatches.length > 0) {
-      console.log(`Found ${listingMatches.length} property listings`);
+      console.log(`Found ${listingMatches.length} property listings on Pararius`);
       
       for (let i = 0; i < Math.min(listingMatches.length, 50); i++) {
         const listing = listingMatches[i];
         
-        // Extract title from the actual structure
-        const titleMatch = listing.match(/<h2 class="listing-search-item__title"[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/);
+        // Extract title from the link text
+        const titleMatch = listing.match(/<a class="listing-search-item__link listing-search-item__link--title"[^>]*>\s*([\s\S]*?)\s*<\/a>/);
         const title = titleMatch ? extractText(titleMatch[1]) : null;
-        if (!title || title.length < 3) continue; // Skip if no valid title
+        if (!title || title.length < 3) continue;
         
-        // Extract price from the specific price div
+        // Extract price from price div - matches "€ 442 per maand"
         const priceMatch = listing.match(/<div class="listing-search-item__price"[^>]*>€\s*(\d+)/);
         const price = priceMatch ? parseInt(priceMatch[1]) : null;
         
         // Extract address from sub-title div
-        const addressMatch = listing.match(/<div class="listing-search-item__sub-title"[^>]*>(.*?)<\/div>/);
+        const addressMatch = listing.match(/<div class="listing-search-item__sub-title"[^>]*>\s*(.*?)\s*<\/div>/);
         const address = addressMatch ? extractText(addressMatch[1]) : 'Groningen';
         
-        // Extract URL from the actual link structure
+        // Extract URL from href attribute
         const urlMatch = listing.match(/href="(https:\/\/www\.pararius\.nl\/[^"]+)"/);
         const url = urlMatch ? urlMatch[1] : `https://www.pararius.nl/huurwoningen/groningen`;
         
-        // Extract surface area from the features list
-        const surfaceMatch = listing.match(/<li class="illustrated-features__item illustrated-features__item--surface-area">(\d+)\s*m²<\/li>/);
+        // Try to extract surface area and bedrooms from features (these might not always be present)
+        const surfaceMatch = listing.match(/(\d+)\s*m²/);
         const surface_area = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
         
-        // Extract room count (bedrooms)
-        const roomMatch = listing.match(/<li class="illustrated-features__item illustrated-features__item--number-of-rooms">(\d+)\s*(?:kamer|room)/);
+        const roomMatch = listing.match(/(\d+)\s*(?:kamer|slaapkamer|bedroom)/i);
         const bedrooms = roomMatch ? parseInt(roomMatch[1]) : null;
         
         // Only add properties with valid data
