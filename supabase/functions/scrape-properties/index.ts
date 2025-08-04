@@ -59,124 +59,62 @@ async function scrapePararius(): Promise<Property[]> {
     const html = await response.text();
     console.log("Pararius HTML fetched, length:", html.length);
     
-    // Debug: Check if we can find any listings at all
-    const basicListingCheck = html.includes('listing-search-item');
-    console.log("Basic listing check - contains 'listing-search-item':", basicListingCheck);
-    
-    // Debug: Try different section patterns
-    const sectionPattern1 = html.match(/<section[^>]*class="[^"]*listing-search-item/g);
-    const sectionPattern2 = html.match(/<section class="listing-search-item/g);
-    console.log("Section pattern 1 matches:", sectionPattern1?.length || 0);
-    console.log("Section pattern 2 matches:", sectionPattern2?.length || 0);
-    
-    // Parse the HTML to extract property listings - try multiple patterns
-    let listingMatches = html.match(/<section class="listing-search-item[\s\S]*?<\/section>/g);
-    
-    if (!listingMatches || listingMatches.length === 0) {
-      // Try alternative pattern
-      listingMatches = html.match(/<section[^>]*listing-search-item[^>]*>[\s\S]*?<\/section>/g);
-      console.log("Alternative pattern found:", listingMatches?.length || 0, "matches");
-    }
-    
-    if (!listingMatches || listingMatches.length === 0) {
-      // Try even more flexible pattern
-      listingMatches = html.match(/<section[^>]*>[\s\S]*?listing-search-item[\s\S]*?<\/section>/g);
-      console.log("Flexible pattern found:", listingMatches?.length || 0, "matches");
-    }
-    
-    console.log("Final listing matches found:", listingMatches?.length || 0);
+    // Extract property listings using the correct pattern
+    const listingMatches = html.match(/<section class="listing-search-item[^"]*"[\s\S]*?<\/section>/g);
+    console.log("Found listings:", listingMatches?.length || 0);
     
     if (listingMatches && listingMatches.length > 0) {
-      console.log(`Found ${listingMatches.length} property listings on Pararius`);
-      
-      for (let i = 0; i < Math.min(listingMatches.length, 5); i++) { // Debug first 5 only
+      for (let i = 0; i < Math.min(listingMatches.length, 15); i++) {
         const listing = listingMatches[i];
-        console.log(`\n=== Processing listing ${i + 1} ===`);
-        console.log("Listing HTML length:", listing.length);
         
-        // Debug title extraction
+        // Extract title - now using the actual structure we see
         const titleMatch = listing.match(/<a class="listing-search-item__link listing-search-item__link--title"[^>]*>\s*([\s\S]*?)\s*<\/a>/);
-        console.log("Title match found:", !!titleMatch);
-        if (titleMatch) {
-          console.log("Raw title content:", titleMatch[1]);
-        }
-        
         const title = titleMatch ? extractText(titleMatch[1]) : null;
-        console.log("Extracted title:", title);
         
-        if (!title || title.length < 3) {
-          console.log("Skipping - no valid title");
-          continue;
-        }
+        if (!title || title.length < 3) continue;
         
-        // Debug price extraction
-        const priceMatch = listing.match(/<div class="listing-search-item__price"[^>]*>€\s*(\d+)/);
-        console.log("Price match found:", !!priceMatch);
-        if (priceMatch) {
-          console.log("Raw price content:", priceMatch[0]);
-        }
-        const price = priceMatch ? parseInt(priceMatch[1]) : null;
-        console.log("Extracted price:", price);
+        // Extract price using the correct pattern
+        const priceMatch = listing.match(/€&nbsp;([\d.]+)/);
+        const price = priceMatch ? parseInt(priceMatch[1].replace('.', '')) : null;
         
-        // Debug address extraction
+        // Extract address from sub-title
         const addressMatch = listing.match(/<div class="listing-search-item__sub-title"[^>]*>\s*(.*?)\s*<\/div>/);
-        console.log("Address match found:", !!addressMatch);
-        if (addressMatch) {
-          console.log("Raw address content:", addressMatch[1]);
-        }
         const address = addressMatch ? extractText(addressMatch[1]) : 'Groningen';
-        console.log("Extracted address:", address);
         
-        // Debug URL extraction
+        // Extract URL
         const urlMatch = listing.match(/href="(https:\/\/www\.pararius\.nl\/[^"]+)"/);
-        console.log("URL match found:", !!urlMatch);
-        const url = urlMatch ? urlMatch[1] : `https://www.pararius.nl/huurwoningen/groningen`;
-        console.log("Extracted URL:", url);
+        const url = urlMatch ? urlMatch[1] : 'https://www.pararius.nl/huurwoningen/groningen';
         
-        // Try to extract surface area and bedrooms from features (these might not always be present)
+        // Extract features
         const surfaceMatch = listing.match(/(\d+)\s*m²/);
         const surface_area = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
         
-        const roomMatch = listing.match(/(\d+)\s*(?:kamer|slaapkamer|bedroom)/i);
+        const roomMatch = listing.match(/(\d+)\s*(?:kamer|slaapkamer)/i);
         const bedrooms = roomMatch ? parseInt(roomMatch[1]) : null;
         
-        // Only add properties with valid data
-        if (title && title.length > 3) {
-          console.log("Adding property to list");
-          const property: Property = {
-            external_id: `pararius_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`,
-            source: 'pararius',
-            title: title.substring(0, 200),
-            description: `Property in Groningen - ${title}`,
-            price,
-            address: address.substring(0, 200),
-            postal_code: extractPostalCode(address),
-            property_type: 'apartment',
-            bedrooms,
-            bathrooms: 1,
-            surface_area,
-            url,
-            image_urls: extractImageUrls(listing),
-            features: extractFeatures(listing)
-          };
-          
-          properties.push(property);
-        } else {
-          console.log("Skipping property - invalid title");
-        }
+        const property: Property = {
+          external_id: `pararius_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`,
+          source: 'pararius',
+          title: title.substring(0, 200),
+          description: `Property in Groningen - ${title}`,
+          price,
+          address: address.substring(0, 200),
+          postal_code: extractPostalCode(address),
+          property_type: 'apartment',
+          bedrooms,
+          bathrooms: 1,
+          surface_area,
+          url,
+          image_urls: extractImageUrls(listing),
+          features: extractFeatures(listing)
+        };
+        
+        properties.push(property);
       }
-    } else {
-      console.log("No property listings found in HTML");
-      // Debug: Show a sample of the HTML to understand structure
-      console.log("HTML sample (first 2000 chars):", html.substring(0, 2000));
     }
     
-    console.log(`Successfully parsed ${properties.length} real properties from Pararius`);
-    
-    // If we still don't have properties, log the HTML structure for debugging
     if (properties.length === 0) {
-      console.log("No properties found. HTML structure sample:", html.substring(0, 1000));
-      console.log("Full HTML length:", html.length);
+      console.log("No properties extracted from Pararius");
       throw new Error("No valid properties could be extracted from Pararius");
     }
     
@@ -185,6 +123,7 @@ async function scrapePararius(): Promise<Property[]> {
     throw error;
   }
   
+  console.log(`Scraped ${properties.length} properties from Pararius`);
   return properties;
 }
 
