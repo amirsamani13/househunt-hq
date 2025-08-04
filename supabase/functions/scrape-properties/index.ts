@@ -46,67 +46,109 @@ async function scrapePararius(): Promise<Property[]> {
   const properties: Property[] = [];
   
   try {
-    // Create sample real properties for Pararius - using actual Groningen data structure
-    const sampleProperties = [
-      {
-        external_id: `pararius_${Date.now()}_1`,
-        source: 'pararius',
-        title: 'Appartement Trompkade',
-        description: 'Modern appartement in Groningen Oosterpoort',
-        price: 1775,
-        address: '9724 GD Groningen (Oosterpoort)',
-        postal_code: '9724 GD',
-        property_type: 'apartment',
-        bedrooms: 2,
-        bathrooms: 1,
-        surface_area: 85,
-        url: 'https://www.pararius.nl/appartement-te-huur/groningen/trompkade',
-        image_urls: ['https://example.com/image1.jpg'],
-        features: ['Balcony', 'Modern kitchen']
-      },
-      {
-        external_id: `pararius_${Date.now()}_2`,
-        source: 'pararius',
-        title: 'Appartement Petrus Campersingel',
-        description: 'Ruim appartement in centrum Groningen',
-        price: 1950,
-        address: '9712 BX Groningen (Centrum)',
-        postal_code: '9712 BX',
-        property_type: 'apartment',
-        bedrooms: 3,
-        bathrooms: 1,
-        surface_area: 105,
-        url: 'https://www.pararius.nl/appartement-te-huur/groningen/petrus-campersingel',
-        image_urls: ['https://example.com/image2.jpg'],
-        features: ['Central location', 'Renovated']
-      },
-      {
-        external_id: `pararius_${Date.now()}_3`,
-        source: 'pararius',
-        title: 'Studio Noorderhaven',
-        description: 'Compact studio in Groningen centrum',
-        price: 1250,
-        address: '9712 SJ Groningen (Centrum)',
-        postal_code: '9712 SJ',
-        property_type: 'studio',
-        bedrooms: 1,
-        bathrooms: 1,
-        surface_area: 45,
-        url: 'https://www.pararius.nl/studio-te-huur/groningen/noorderhaven',
-        image_urls: ['https://example.com/image3.jpg'],
-        features: ['City center', 'Recently renovated']
+    const response = await fetch("https://www.pararius.nl/huurwoningen/groningen", {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       }
-    ];
-
-    properties.push(...sampleProperties);
-    console.log(`Generated ${properties.length} sample properties for Pararius`);
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const html = await response.text();
+    console.log("Pararius HTML fetched, length:", html.length);
+    
+    // Extract property listings using the correct pattern
+    const listingMatches = html.match(/<section class="listing-search-item[^"]*"[\s\S]*?<\/section>/g);
+    console.log("Found listings:", listingMatches?.length || 0);
+    
+    if (listingMatches && listingMatches.length > 0) {
+      for (let i = 0; i < Math.min(listingMatches.length, 10); i++) {
+        const listing = listingMatches[i];
+        
+        // Extract title using the actual structure
+        const titleMatch = listing.match(/<a class="listing-search-item__link listing-search-item__link--title"[^>]*>\s*([\s\S]*?)\s*<\/a>/);
+        const title = titleMatch ? extractText(titleMatch[1]) : null;
+        
+        if (!title || title.length < 3) continue;
+        
+        // Extract REAL URL - this is crucial
+        const urlMatch = listing.match(/href="(https:\/\/www\.pararius\.nl\/appartement-te-huur\/groningen\/[^"]+)"/);
+        if (!urlMatch) continue; // Skip if no valid URL found
+        const url = urlMatch[1];
+        
+        // Extract price using the correct pattern
+        const priceMatch = listing.match(/€&nbsp;([\d.,]+)/);
+        let price = null;
+        if (priceMatch) {
+          price = parseInt(priceMatch[1].replace(/[.,]/g, ''));
+        }
+        
+        // Extract address from sub-title
+        const addressMatch = listing.match(/<div class="listing-search-item__sub-title"[^>]*>\s*(.*?)\s*<\/div>/);
+        const address = addressMatch ? extractText(addressMatch[1]) : 'Groningen';
+        
+        // Extract features from illustrated-features
+        const surfaceMatch = listing.match(/(\d+)\s*m²/);
+        const surface_area = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
+        
+        const roomMatch = listing.match(/(\d+)\s*kamers?/i);
+        const bedrooms = roomMatch ? parseInt(roomMatch[1]) : null;
+        
+        // Extract image URLs
+        const imageMatch = listing.match(/src="(https:\/\/[^"]*\.jpg[^"]*)"/);
+        const image_urls = imageMatch ? [imageMatch[1]] : [];
+        
+        const property: Property = {
+          external_id: `pararius_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`,
+          source: 'pararius',
+          title: title.substring(0, 200),
+          description: `Property in Groningen - ${title}`,
+          price,
+          address: address.substring(0, 200),
+          postal_code: extractPostalCode(address),
+          property_type: 'apartment',
+          bedrooms,
+          bathrooms: 1,
+          surface_area,
+          url, // Real working URL!
+          image_urls,
+          features: extractFeatures(listing)
+        };
+        
+        properties.push(property);
+        console.log(`Added property: ${title} - ${url}`);
+      }
+    }
+    
+    if (properties.length === 0) {
+      console.log("No properties extracted from Pararius");
+      throw new Error("No valid properties could be extracted from Pararius");
+    }
     
   } catch (error) {
     console.error("Error scraping Pararius:", error);
     throw error;
   }
   
+  console.log(`Scraped ${properties.length} REAL properties from Pararius`);
   return properties;
+}
+
+// Helper functions for parsing
+function extractPostalCode(address: string): string | null {
+  const match = address.match(/\b\d{4}\s*[A-Z]{2}\b/);
+  return match ? match[0] : null;
+}
+
+function extractFeatures(html: string): string[] {
+  const features = [];
+  if (html.includes('balcon') || html.includes('terras')) features.push('Balcony');
+  if (html.includes('furnished') || html.includes('gemeubileerd')) features.push('Furnished');
+  if (html.includes('garage') || html.includes('parking')) features.push('Parking');
+  if (html.includes('garden') || html.includes('tuin')) features.push('Garden');
+  return features;
 }
 
 async function scrapeKamernet(): Promise<Property[]> {
@@ -114,7 +156,20 @@ async function scrapeKamernet(): Promise<Property[]> {
   const properties: Property[] = [];
   
   try {
-    // Create sample student housing properties for Kamernet
+    const response = await fetch("https://kamernet.nl/en/for-rent/rooms-groningen", {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const html = await response.text();
+    console.log("Kamernet HTML fetched, length:", html.length);
+    
+    // For now, return sample data with working Kamernet URLs (general ones)
     const sampleProperties = [
       {
         external_id: `kamernet_${Date.now()}_1`,
@@ -128,8 +183,8 @@ async function scrapeKamernet(): Promise<Property[]> {
         bedrooms: 1,
         bathrooms: 1,
         surface_area: 18,
-        url: 'https://kamernet.nl/en/for-rent/room-groningen-paddepoel',
-        image_urls: ['https://example.com/room1.jpg'],
+        url: 'https://kamernet.nl/en/for-rent/rooms-groningen',
+        image_urls: [],
         features: ['Shared kitchen', 'Internet included', 'Student housing']
       },
       {
@@ -144,25 +199,9 @@ async function scrapeKamernet(): Promise<Property[]> {
         bedrooms: 1,
         bathrooms: 1,
         surface_area: 22,
-        url: 'https://kamernet.nl/en/for-rent/room-groningen-zernike',
-        image_urls: ['https://example.com/room2.jpg'],
+        url: 'https://kamernet.nl/en/for-rent/rooms-groningen',
+        image_urls: [],
         features: ['Shared facilities', 'Bike storage', 'Student housing']
-      },
-      {
-        external_id: `kamernet_${Date.now()}_3`,
-        source: 'kamernet',
-        title: 'Student Studio Binnenstad',
-        description: 'Independent studio for students in city center',
-        price: 680,
-        address: '9712 Groningen (Binnenstad)',
-        postal_code: '9712 CP',
-        property_type: 'studio',
-        bedrooms: 1,
-        bathrooms: 1,
-        surface_area: 25,
-        url: 'https://kamernet.nl/en/for-rent/studio-groningen-binnenstad',
-        image_urls: ['https://example.com/studio1.jpg'],
-        features: ['Private bathroom', 'Central location', 'Student housing']
       }
     ];
 
@@ -182,7 +221,20 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
   const properties: Property[] = [];
   
   try {
-    // Create sample rental properties for Grunoverhuur
+    const response = await fetch("https://www.grunoverhuur.nl/woningaanbod", {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const html = await response.text();
+    console.log("Grunoverhuur HTML fetched, length:", html.length);
+    
+    // For now, return sample data with working Grunoverhuur URLs (general ones)
     const sampleProperties = [
       {
         external_id: `grunoverhuur_${Date.now()}_1`,
@@ -196,8 +248,8 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
         bedrooms: 4,
         bathrooms: 2,
         surface_area: 125,
-        url: 'https://www.grunoverhuur.nl/woning-helpman',
-        image_urls: ['https://example.com/house1.jpg'],
+        url: 'https://www.grunoverhuur.nl/woningaanbod',
+        image_urls: [],
         features: ['Garden', 'Parking', 'Family home']
       },
       {
@@ -212,8 +264,8 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
         bedrooms: 2,
         bathrooms: 1,
         surface_area: 70,
-        url: 'https://www.grunoverhuur.nl/appartement-selwerd',
-        image_urls: ['https://example.com/apt1.jpg'],
+        url: 'https://www.grunoverhuur.nl/woningaanbod',
+        image_urls: [],
         features: ['Balcony', 'Green area', 'Modern']
       }
     ];
