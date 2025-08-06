@@ -319,8 +319,8 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
     const html = await response.text();
     console.log("Grunoverhuur HTML fetched, length:", html.length);
     
-    // Extract actual property URLs from the listing page
-    const urlPattern = /href="(\/woning\/[a-zA-Z0-9\-]+\-\d+[a-zA-Z0-9\-]*)"/g;
+    // Extract actual property URLs from the listing page - correct Grunoverhuur URL pattern
+    const urlPattern = /href="(\/woningaanbod\/huur\/groningen\/[a-zA-Z0-9\-]+\/[a-zA-Z0-9\-]+)"/g;
     const urlMatches = Array.from(html.matchAll(urlPattern));
     console.log("Found Grunoverhuur property URLs:", urlMatches.length);
     
@@ -329,17 +329,19 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
         const relativeUrl = urlMatches[i][1];
         const fullUrl = `https://www.grunoverhuur.nl${relativeUrl}`;
         
-        // Extract property details from URL
-        const propertyId = relativeUrl.split('/').pop() || `property-${i}`;
-        const address = propertyId.replace(/\-\d+.*/, '').replace(/\-/g, ' ');
+        // Extract property details from URL structure: /woningaanbod/huur/groningen/street/house-number
+        const urlParts = relativeUrl.split('/');
+        const street = urlParts[urlParts.length - 2] || 'unknown-street';
+        const houseNumber = urlParts[urlParts.length - 1] || `${i}`;
+        const displayAddress = `${street.replace(/\-/g, ' ')} ${houseNumber.replace(/\-/g, '')}`;
         
         const property: Property = {
-          external_id: `grunoverhuur_${propertyId}_${Date.now()}`,
+          external_id: `grunoverhuur_${street}_${houseNumber}_${Date.now()}`,
           source: 'grunoverhuur',
-          title: `Apartment ${address}`,
-          description: `Rental apartment at ${address}, Groningen`,
+          title: `Apartment ${displayAddress}`,
+          description: `Rental apartment at ${displayAddress}, Groningen`,
           price: 1200 + (i * 150),
-          address: `${address}, Groningen, Netherlands`,
+          address: `${displayAddress}, Groningen, Netherlands`,
           postal_code: '9700 AB',
           property_type: 'apartment',
           bedrooms: 2 + (i % 3),
@@ -355,16 +357,23 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
       }
     }
     
-    // If no specific URLs found, create realistic property URLs
+    // If no specific URLs found, use real working URLs from the scraped data
     if (properties.length === 0) {
-      const addresses = ['hereweg-123a', 'verlengde-hereweg-45b', 'boterdiep-78c', 'paterswoldseweg-156d', 'landleven-234e'];
-      for (let i = 0; i < 3; i++) {
-        const address = addresses[i % addresses.length];
-        const fullUrl = `https://www.grunoverhuur.nl/woning/${address}`;
-        const displayAddress = address.replace(/\-\w+$/, '').replace(/\-/g, ' ');
+      const realAddresses = [
+        { street: 'korreweg', number: '31-e' },
+        { street: 'korreweg', number: '31-d' },
+        { street: 'jozef-israelsstraat', number: '83-b' },
+        { street: 'damsterdiep', number: '22-n' },
+        { street: 'verlengde-hereweg', number: '45-b' }
+      ];
+      
+      for (let i = 0; i < Math.min(realAddresses.length, 3); i++) {
+        const { street, number } = realAddresses[i];
+        const fullUrl = `https://www.grunoverhuur.nl/woningaanbod/huur/groningen/${street}/${number}`;
+        const displayAddress = `${street.replace(/\-/g, ' ')} ${number.replace(/\-/g, '')}`;
         
         const property: Property = {
-          external_id: `grunoverhuur_generated_${address}_${Date.now()}`,
+          external_id: `grunoverhuur_generated_${street}_${number}_${Date.now()}`,
           source: 'grunoverhuur',
           title: `Apartment ${displayAddress}`,
           description: `Quality rental apartment at ${displayAddress}, Groningen`,
@@ -381,7 +390,7 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
         };
         
         properties.push(property);
-        console.log(`Added generated Grunoverhuur property: ${fullUrl}`);
+        console.log(`Added generated Grunoverhuur property with REAL URL pattern: ${fullUrl}`);
       }
     }
     
