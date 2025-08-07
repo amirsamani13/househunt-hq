@@ -1,5 +1,13 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { Resend } from "npm:resend@2.0.0";
+
+const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
+
+// Twilio configuration
+const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
+const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
+const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -112,6 +120,108 @@ function createNotificationMessage(property: Property, alertName: string): strin
   return `🏠 New property match for "${alertName}": ${property.title} - ${price}${bedrooms}${area} in ${property.address || 'Groningen'}. View: ${property.url}`;
 }
 
+function createEmailHTML(property: Property, alertName: string): string {
+  const price = formatPrice(property.price);
+  const bedrooms = property.bedrooms ? `${property.bedrooms} bedroom${property.bedrooms > 1 ? 's' : ''}` : 'N/A';
+  const bathrooms = property.bathrooms ? `${property.bathrooms} bathroom${property.bathrooms > 1 ? 's' : ''}` : 'N/A';
+  const area = property.surface_area ? `${property.surface_area}m²` : 'N/A';
+  
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+      <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <h1 style="color: #2563eb; margin-bottom: 20px;">🏠 New Property Match!</h1>
+        <h2 style="color: #1f2937; margin-bottom: 15px;">${property.title}</h2>
+        
+        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Alert:</strong> ${alertName}</p>
+          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Price:</strong> ${price}</p>
+          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Location:</strong> ${property.address || 'Groningen'}</p>
+          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Bedrooms:</strong> ${bedrooms}</p>
+          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Bathrooms:</strong> ${bathrooms}</p>
+          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Size:</strong> ${area}</p>
+          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Source:</strong> ${property.source}</p>
+        </div>
+        
+        ${property.description ? `<p style="color: #6b7280; margin-bottom: 20px;">${property.description}</p>` : ''}
+        
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${property.url}" style="background-color: #2563eb; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">View Property</a>
+        </div>
+        
+        <p style="color: #9ca3af; font-size: 14px; margin-top: 30px; text-align: center;">
+          This notification was sent because this property matches your search criteria for "${alertName}".
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+async function sendSMS(to: string, message: string): Promise<boolean> {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
+    console.error("Twilio credentials not configured");
+    return false;
+  }
+
+  try {
+    const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
+    const body = new URLSearchParams({
+      To: to,
+      From: TWILIO_PHONE_NUMBER,
+      Body: message,
+    });
+
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Basic ${auth}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      }
+    );
+
+    if (response.ok) {
+      console.log("SMS sent successfully");
+      return true;
+    } else {
+      const error = await response.text();
+      console.error("Failed to send SMS:", error);
+      return false;
+    }
+  } catch (error) {
+    console.error("Error sending SMS:", error);
+    return false;
+  }
+}
+
+async function sendNotifications(property: Property, alert: UserAlert, userProfile: any): Promise<void> {
+  const message = createNotificationMessage(property, alert.name);
+  
+  // Send Email
+  if (userProfile.email) {
+    try {
+      const emailHTML = createEmailHTML(property, alert.name);
+      await resend.emails.send({
+        from: "Property Alert <notifications@resend.dev>",
+        to: [userProfile.email],
+        subject: `🏠 New Property Match: ${property.title}`,
+        html: emailHTML,
+        text: message,
+      });
+      console.log(`Email sent to ${userProfile.email}`);
+    } catch (error) {
+      console.error("Failed to send email:", error);
+    }
+  }
+  
+  // Send SMS
+  if (userProfile.phone) {
+    await sendSMS(userProfile.phone, message);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -156,6 +266,13 @@ serve(async (req) => {
 
     // Process each alert against new properties
     for (const alert of alerts || []) {
+      // Get user profile for contact information
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('email, phone')
+        .eq('user_id', alert.user_id)
+        .single();
+
       for (const property of newProperties || []) {
         if (matchesAlert(property, alert)) {
           // Check if notification already exists
@@ -169,6 +286,11 @@ serve(async (req) => {
 
           if (!existingNotification) {
             const message = createNotificationMessage(property, alert.name);
+            
+            // Send actual notifications (email & SMS)
+            if (userProfile) {
+              await sendNotifications(property, alert, userProfile);
+            }
             
             notifications.push({
               user_id: alert.user_id,
