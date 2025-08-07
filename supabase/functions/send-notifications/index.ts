@@ -197,28 +197,24 @@ async function sendSMS(to: string, message: string): Promise<boolean> {
 }
 
 async function sendNotifications(property: Property, alert: UserAlert, userProfile: any): Promise<void> {
-  const message = createNotificationMessage(property, alert.name);
-  
-  // Send Email
+  // Send Email only for now
   if (userProfile.email) {
     try {
       const emailHTML = createEmailHTML(property, alert.name);
       await resend.emails.send({
-        from: "Property Alert <notifications@resend.dev>",
+        from: "Property Alert <onboarding@resend.dev>",
         to: [userProfile.email],
         subject: `🏠 New Property Match: ${property.title}`,
         html: emailHTML,
-        text: message,
+        text: createNotificationMessage(property, alert.name),
       });
-      console.log(`Email sent to ${userProfile.email}`);
+      console.log(`Email sent to ${userProfile.email} for property: ${property.title}`);
     } catch (error) {
       console.error("Failed to send email:", error);
+      throw error;
     }
-  }
-  
-  // Send SMS
-  if (userProfile.phone) {
-    await sendSMS(userProfile.phone, message);
+  } else {
+    console.log("No email address found for user");
   }
 }
 
