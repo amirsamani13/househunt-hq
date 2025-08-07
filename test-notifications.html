@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Property Notifications</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        button { background: #2563eb; color: white; padding: 10px 20px; border: none; border-radius: 5px; margin: 10px; cursor: pointer; }
+        button:hover { background: #1d4ed8; }
+        .log { background: #f3f4f6; padding: 20px; border-radius: 5px; margin: 20px 0; white-space: pre-wrap; }
+        .success { color: #059669; }
+        .error { color: #dc2626; }
+    </style>
+</head>
+<body>
+    <h1>Test Property Notification System</h1>
+    
+    <button onclick="runScraper()">1. Run Property Scraper</button>
+    <button onclick="runNotifications()">2. Send Notifications</button>
+    <button onclick="testBoth()">3. Test Complete Flow</button>
+    
+    <div id="log" class="log">Ready to test...</div>
+
+    <script>
+        const supabaseUrl = 'https://oxdneiaojgwezxltivcl.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94ZG5laWFvamd3ZXp4bHRpdmNsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM3MDY5ODUsImV4cCI6MjA2OTI4Mjk4NX0.8jK-YtcqCshUDP1UgYzZLg8efcqfSl5oHK2a1ghqgAI';
+        
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : '';
+            logEl.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        async function callFunction(functionName, method = 'POST', body = null) {
+            try {
+                log(`Calling ${functionName}...`);
+                const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+                    method,
+                    headers: {
+                        'Authorization': `Bearer ${supabaseKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: body ? JSON.stringify(body) : null
+                });
+                
+                const data = await response.text();
+                if (response.ok) {
+                    log(`✅ ${functionName} completed successfully`, 'success');
+                    log(`Response: ${data}`);
+                    return JSON.parse(data);
+                } else {
+                    log(`❌ ${functionName} failed: ${data}`, 'error');
+                    return null;
+                }
+            } catch (error) {
+                log(`❌ Error calling ${functionName}: ${error.message}`, 'error');
+                return null;
+            }
+        }
+
+        async function runScraper() {
+            log('🕷️ Starting property scraper...');
+            await callFunction('scrape-properties');
+        }
+
+        async function runNotifications() {
+            log('📧 Starting notification sender...');
+            await callFunction('send-notifications');
+        }
+
+        async function testBoth() {
+            log('🧪 Starting complete notification test flow...');
+            log('Step 1: Running scraper to get fresh properties...');
+            await runScraper();
+            
+            log('Waiting 3 seconds before sending notifications...');
+            setTimeout(async () => {
+                log('Step 2: Checking for matches and sending notifications...');
+                await runNotifications();
+                log('✅ Complete test flow finished!', 'success');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
