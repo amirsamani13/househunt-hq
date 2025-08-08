@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, MapPin, DollarSign, Home, Bed, Bath, Car } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -23,6 +23,8 @@ export default function HuntPage() {
     propertyType: "Any"
   });
   const [loading, setLoading] = useState(false);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [loadingAlerts, setLoadingAlerts] = useState(false);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -83,7 +85,30 @@ export default function HuntPage() {
       setLoading(false);
     }
   };
-  return (
+
+  const fetchAlerts = async () => {
+    if (!user) return;
+    setLoadingAlerts(true);
+    const { data, error } = await supabase
+      .from('user_alerts')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    if (!error && data) setAlerts(data);
+    setLoadingAlerts(false);
+  };
+
+  const handleDeleteAlert = async (id: string) => {
+    const { error } = await supabase.from('user_alerts').delete().eq('id', id);
+    if (error) {
+      toast({ title: 'Error', description: 'Failed to delete alert.', variant: 'destructive' });
+    } else {
+      toast({ title: 'Alert removed', description: 'You will no longer receive notifications for this alert.' });
+      fetchAlerts();
+    }
+  };
+
+  useEffect(() => { fetchAlerts(); }, [user]);
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
       {/* Header */}
       <header className="border-b bg-white/80 backdrop-blur-sm">
@@ -185,6 +210,43 @@ export default function HuntPage() {
             >
               {loading ? "Creating Alert..." : "Start Monitoring Properties"}
             </Button>
+          </CardContent>
+        </Card>
+
+        {/* Manage Alerts */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Your Alerts</CardTitle>
+            <CardDescription>Manage your saved property alerts</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingAlerts ? (
+              <div className="text-muted-foreground">Loading alerts...</div>
+            ) : alerts.length === 0 ? (
+              <div className="text-muted-foreground">No alerts yet. Create one above to start receiving emails.</div>
+            ) : (
+              <div className="space-y-3">
+                {alerts.map((a) => (
+                  <div key={a.id} className="flex items-center justify-between border border-border rounded-md p-3">
+                    <div>
+                      <div className="font-medium">{a.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {a.min_price ? `€${a.min_price}` : 'Any'} - {a.max_price ? `€${a.max_price}` : 'Any'}
+                        {a.min_bedrooms ? ` • ${a.min_bedrooms}+ beds` : ''}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={a.is_active ? 'secondary' : 'outline'}>
+                        {a.is_active ? 'Active' : 'Paused'}
+                      </Badge>
+                      <Button variant="destructive" onClick={() => handleDeleteAlert(a.id)}>
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 

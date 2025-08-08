@@ -45,9 +45,14 @@ export const Header = () => {
               Contact
             </a>
             {user && (
-              <Link to="/test" className="text-muted-foreground hover:text-foreground transition-colors">
-                Test Scraping
-              </Link>
+              <>
+                <Link to="/test" className="text-muted-foreground hover:text-foreground transition-colors">
+                  Test Scraping
+                </Link>
+                <a href="/test-notifications.html" target="_blank" rel="noopener" className="text-muted-foreground hover:text-foreground transition-colors">
+                  Email Notification Test
+                </a>
+              </>
             )}
           </nav>
 

@@ -259,6 +259,7 @@ serve(async (req) => {
 
     let notificationsSent = 0;
     const notifications: any[] = [];
+    const notifiedPairs = new Set<string>();
 
     // Process each alert against new properties
     for (const alert of alerts || []) {
@@ -267,24 +268,26 @@ serve(async (req) => {
         .from('profiles')
         .select('email, phone')
         .eq('user_id', alert.user_id)
-        .single();
+        .maybeSingle();
 
       for (const property of newProperties || []) {
         if (matchesAlert(property, alert)) {
-          // Check if notification already exists
+          const key = `${alert.user_id}|${property.id}`;
+          if (notifiedPairs.has(key)) continue;
+
+          // Check if user was already notified about this property (any alert)
           const { data: existingNotification } = await supabase
             .from('notifications')
             .select('id')
             .eq('user_id', alert.user_id)
             .eq('property_id', property.id)
-            .eq('alert_id', alert.id)
-            .single();
+            .maybeSingle();
 
           if (!existingNotification) {
             const message = createNotificationMessage(property, alert.name);
             
-            // Send actual notifications (email & SMS)
-            if (userProfile) {
+            // Send email notification only (for now)
+            if (userProfile?.email) {
               await sendNotifications(property, alert, userProfile);
             }
             
@@ -297,6 +300,7 @@ serve(async (req) => {
             });
             
             notificationsSent++;
+            notifiedPairs.add(key);
           }
         }
       }
