@@ -17,12 +17,31 @@
     <button onclick="runScraper()">1. Run Property Scraper</button>
     <button onclick="runNotifications()">2. Send Notifications</button>
     <button onclick="testBoth()">3. Test Complete Flow</button>
+    <button id="stopBtn" onclick="stopTesting()" style="background:#dc2626">Stop / Pause</button>
+    
+    <div style="margin-top:10px">
+      <input id="testEmail" type="email" placeholder="Your email for test" style="padding:8px;border:1px solid #e5e7eb;border-radius:6px;min-width:280px"/>
+      <button onclick="runTestEmail()">4. Send Test Email</button>
+    </div>
     
     <div id="log" class="log">Ready to test...</div>
 
     <script>
         const supabaseUrl = 'https://oxdneiaojgwezxltivcl.supabase.co';
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94ZG5laWFvamd3ZXp4bHRpdmNsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM3MDY5ODUsImV4cCI6MjA2OTI4Mjk4NX0.8jK-YtcqCshUDP1UgYzZLg8efcqfSl5oHK2a1ghqgAI';
+        
+        // Test controls
+        let currentController = null; // AbortController
+        let stopRequested = false;
+        
+        // Prefill test email from localStorage
+        const savedEmail = localStorage.getItem('testEmail');
+        if (savedEmail) {
+          setTimeout(() => {
+            const input = document.getElementById('testEmail');
+            if (input) input.value = savedEmail;
+          }, 0);
+        }
         
         function log(message, type = 'info') {
             const logEl = document.getElementById('log');
@@ -34,28 +53,40 @@
 
         async function callFunction(functionName, method = 'POST', body = null) {
             try {
+                if (stopRequested) {
+                    log(`⏸️ Skipped ${functionName} because test is paused`);
+                    return null;
+                }
                 log(`Calling ${functionName}...`);
+                currentController = new AbortController();
                 const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
                     method,
                     headers: {
                         'Authorization': `Bearer ${supabaseKey}`,
                         'Content-Type': 'application/json'
                     },
-                    body: body ? JSON.stringify(body) : null
+                    body: body ? JSON.stringify(body) : null,
+                    signal: currentController.signal
                 });
                 
-                const data = await response.text();
+                const text = await response.text();
                 if (response.ok) {
                     log(`✅ ${functionName} completed successfully`, 'success');
-                    log(`Response: ${data}`);
-                    return JSON.parse(data);
+                    log(`Response: ${text}`);
+                    try { return JSON.parse(text); } catch { return text; }
                 } else {
-                    log(`❌ ${functionName} failed: ${data}`, 'error');
+                    log(`❌ ${functionName} failed: ${text}`, 'error');
                     return null;
                 }
             } catch (error) {
+                if (error.name === 'AbortError') {
+                    log(`⛔ ${functionName} aborted.`, 'error');
+                    return null;
+                }
                 log(`❌ Error calling ${functionName}: ${error.message}`, 'error');
                 return null;
+            } finally {
+                currentController = null;
             }
         }
 
@@ -69,17 +100,41 @@
             await callFunction('send-notifications');
         }
 
+        async function runTestEmail() {
+            const input = document.getElementById('testEmail');
+            const to = input?.value?.trim();
+            if (!to) {
+              log('Please enter an email address to send the test to.', 'error');
+              return;
+            }
+            localStorage.setItem('testEmail', to);
+            log(`📨 Sending test email to ${to}...`);
+            await callFunction('send-test-email', 'POST', { to });
+            log('✅ Test email finished (single run).', 'success');
+        }
+
+        function stopTesting() {
+            stopRequested = true;
+            if (currentController) {
+              try { currentController.abort(); } catch {}
+            }
+            log('⏹️ Testing paused/stopped. No further steps will run.');
+        }
+
         async function testBoth() {
+            stopRequested = false;
             log('🧪 Starting complete notification test flow...');
             log('Step 1: Running scraper to get fresh properties...');
             await runScraper();
-            
+            if (stopRequested) return log('⏹️ Flow stopped after scraper.');
+
             log('Waiting 3 seconds before sending notifications...');
-            setTimeout(async () => {
-                log('Step 2: Checking for matches and sending notifications...');
-                await runNotifications();
-                log('✅ Complete test flow finished!', 'success');
-            }, 3000);
+            await new Promise((r) => setTimeout(r, 3000));
+            if (stopRequested) return log('⏹️ Flow stopped before sending notifications.');
+
+            log('Step 2: Checking for matches and sending notifications...');
+            await runNotifications();
+            log('✅ Complete test flow finished (single run).', 'success');
         }
     </script>
 </body>
