@@ -66,6 +66,7 @@ export type Database = {
           full_name: string | null
           id: string
           max_alerts: number | null
+          notifications_paused: boolean
           phone: string | null
           subscription_end_date: string | null
           subscription_status: string | null
@@ -81,6 +82,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           max_alerts?: number | null
+          notifications_paused?: boolean
           phone?: string | null
           subscription_end_date?: string | null
           subscription_status?: string | null
@@ -96,6 +98,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           max_alerts?: number | null
+          notifications_paused?: boolean
           phone?: string | null
           subscription_end_date?: string | null
           subscription_status?: string | null

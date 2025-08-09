@@ -243,12 +243,12 @@ serve(async (req) => {
 
     console.log(`Found ${alerts?.length || 0} active alerts`);
 
-    // Get new properties from the last hour
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    // Get new properties from the last 5 minutes for near real-time notifications
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: newProperties, error: propertiesError } = await supabase
       .from('properties')
       .select('*')
-      .gte('first_seen_at', oneHourAgo)
+      .gte('first_seen_at', fiveMinutesAgo)
       .eq('is_active', true);
 
     if (propertiesError) {
@@ -263,12 +263,17 @@ serve(async (req) => {
 
     // Process each alert against new properties
     for (const alert of alerts || []) {
-      // Get user profile for contact information
+      // Get user profile for contact information and pause state
       const { data: userProfile } = await supabase
         .from('profiles')
-        .select('email, phone')
+        .select('email, phone, notifications_paused')
         .eq('user_id', alert.user_id)
         .maybeSingle();
+
+      // Skip this user if they paused notifications
+      if (userProfile?.notifications_paused) {
+        continue;
+      }
 
       for (const property of newProperties || []) {
         if (matchesAlert(property, alert)) {
@@ -310,11 +315,7 @@ serve(async (req) => {
     if (notifications.length > 0) {
       const { error: insertError } = await supabase
         .from('notifications')
-        .insert(notifications);
-
-      if (insertError) {
-        throw insertError;
-      }
+        .upsert(notifications, { onConflict: 'user_id,property_id', ignoreDuplicates: true });
     }
 
     console.log(`Sent ${notificationsSent} notifications`);

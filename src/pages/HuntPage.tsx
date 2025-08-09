@@ -25,6 +25,7 @@ export default function HuntPage() {
   const [loading, setLoading] = useState(false);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [loadingAlerts, setLoadingAlerts] = useState(false);
+  const [notificationsPaused, setNotificationsPaused] = useState(false);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -98,6 +99,44 @@ export default function HuntPage() {
     setLoadingAlerts(false);
   };
 
+  const fetchPause = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('profiles')
+      .select('notifications_paused')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    setNotificationsPaused(!!data?.notifications_paused);
+  };
+
+  const togglePauseAll = async () => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ notifications_paused: !notificationsPaused })
+      .eq('user_id', user.id);
+    if (error) {
+      toast({ title: 'Error', description: 'Failed to update notification settings.', variant: 'destructive' });
+    } else {
+      setNotificationsPaused(!notificationsPaused);
+      toast({ 
+        title: !notificationsPaused ? 'Notifications paused' : 'Notifications resumed', 
+        description: !notificationsPaused ? 'All alerts are paused for your account.' : 'You will start receiving alerts again.' 
+      });
+    }
+  };
+
+  const toggleAlertActive = async (id: string, current: boolean) => {
+    const { error } = await supabase
+      .from('user_alerts')
+      .update({ is_active: !current })
+      .eq('id', id);
+    if (error) {
+      toast({ title: 'Error', description: 'Failed to update alert.', variant: 'destructive' });
+    } else {
+      fetchAlerts();
+    }
+  };
   const handleDeleteAlert = async (id: string) => {
     const { error } = await supabase.from('user_alerts').delete().eq('id', id);
     if (error) {
@@ -108,7 +147,21 @@ export default function HuntPage() {
     }
   };
 
-  useEffect(() => { fetchAlerts(); }, [user]);
+  useEffect(() => { 
+    if (user) { 
+      fetchAlerts(); 
+      fetchPause(); 
+    }
+    const channel = supabase
+      .channel('properties-live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'properties' }, (payload) => {
+        const p: any = payload.new;
+        toast({ title: 'New property detected', description: p.title || 'A new listing is available.' });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
@@ -217,9 +270,14 @@ export default function HuntPage() {
 
         {/* Manage Alerts */}
         <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Your Alerts</CardTitle>
-            <CardDescription>Manage your saved property alerts</CardDescription>
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <CardTitle>Your Alerts</CardTitle>
+              <CardDescription>Manage your saved property alerts</CardDescription>
+            </div>
+            <Button variant={notificationsPaused ? 'secondary' : 'outline'} onClick={togglePauseAll}>
+              {notificationsPaused ? 'Resume notifications' : 'Pause all notifications'}
+            </Button>
           </CardHeader>
           <CardContent>
             {loadingAlerts ? (
@@ -241,6 +299,9 @@ export default function HuntPage() {
                       <Badge variant={a.is_active ? 'secondary' : 'outline'}>
                         {a.is_active ? 'Active' : 'Paused'}
                       </Badge>
+                      <Button variant="outline" onClick={() => toggleAlertActive(a.id, a.is_active)}>
+                        {a.is_active ? 'Pause' : 'Resume'}
+                      </Button>
                       <Button variant="destructive" onClick={() => handleDeleteAlert(a.id)}>
                         Remove
                       </Button>

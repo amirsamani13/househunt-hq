@@ -114,6 +114,23 @@ export default function TestPage() {
     }
   };
 
+
+  const updatePause = async (value: boolean) => {
+    if (!user) {
+      toast({ title: 'Authentication Required', description: 'Please log in first.', variant: 'destructive' });
+      return;
+    }
+    const { error } = await supabase
+      .from('profiles')
+      .update({ notifications_paused: value })
+      .eq('user_id', user.id);
+    if (error) {
+      toast({ title: 'Error', description: 'Failed to update notification settings.', variant: 'destructive' });
+    } else {
+      toast({ title: value ? 'Notifications paused' : 'Notifications resumed' });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
       <header className="border-b bg-white/80 backdrop-blur-sm">
@@ -132,6 +149,12 @@ export default function TestPage() {
               >
                 <Database className="w-4 h-4 mr-2" />
                 View Properties
+              </Button>
+              <Button variant="destructive" onClick={() => updatePause(true)}>
+                Pause notifications
+              </Button>
+              <Button variant="secondary" onClick={() => updatePause(false)}>
+                Resume
               </Button>
             </div>
           </div>
