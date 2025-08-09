@@ -106,7 +106,7 @@ async function scrapePararius(): Promise<Property[]> {
         const image_urls = imageMatch ? [imageMatch[1]] : [];
         
         const property: Property = {
-          external_id: `pararius_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`,
+          external_id: `pararius:${url}`,
           source: 'pararius',
           title: title.substring(0, 200),
           description: `${title} in ${address}`,
@@ -131,7 +131,7 @@ async function scrapePararius(): Promise<Property[]> {
       console.log("No properties extracted from Pararius, using fallback data");
       // Return one sample property with working URL instead of failing
       const sampleProperty: Property = {
-        external_id: `pararius_fallback_${Date.now()}`,
+        external_id: `pararius:https://www.pararius.nl/huurwoningen/groningen`,
         source: 'pararius',
         title: 'Apartment Groningen Center',
         description: 'Modern apartment in Groningen city center',
@@ -153,7 +153,7 @@ async function scrapePararius(): Promise<Property[]> {
     console.error("Error scraping Pararius:", error);
     // Return sample data instead of throwing error
     const sampleProperty: Property = {
-      external_id: `pararius_error_fallback_${Date.now()}`,
+      external_id: `pararius:https://www.pararius.nl/huurwoningen/groningen`,
       source: 'pararius',
       title: 'Apartment Groningen',
       description: 'Quality apartment in Groningen',
@@ -224,7 +224,7 @@ async function scrapeKamernet(): Promise<Property[]> {
         const propertyId = urlParts[urlParts.length - 1] || `property-${i}`;
         
         const property: Property = {
-          external_id: `kamernet_${propertyId}_${Date.now()}`,
+          external_id: `kamernet:${fullUrl}`,
           source: 'kamernet',
           title: `Student Housing ${streetName}`,
           description: `Student accommodation at ${streetName}, Groningen`,
@@ -254,7 +254,7 @@ async function scrapeKamernet(): Promise<Property[]> {
         const fullUrl = `https://kamernet.nl/en/for-rent/room-groningen/${street}/${roomId}`;
         
         const property: Property = {
-          external_id: `kamernet_generated_${roomId}_${Date.now()}`,
+          external_id: `kamernet:${fullUrl}`,
           source: 'kamernet',
           title: `Student Room ${street}`,
           description: `Student room at ${street}, Groningen`,
@@ -280,7 +280,7 @@ async function scrapeKamernet(): Promise<Property[]> {
     // Always create realistic URLs even on error
     const roomId = `room-${2320000 + Math.floor(Math.random() * 1000)}`;
     const fallbackProperty = {
-      external_id: `kamernet_fallback_${roomId}_${Date.now()}`,
+      external_id: `kamernet:https://kamernet.nl/en/for-rent/room-groningen/paterswoldseweg/${roomId}`,
       source: 'kamernet',
       title: 'Student Room Groningen',
       description: 'Student accommodation in Groningen',
@@ -336,7 +336,7 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
         const displayAddress = `${street.replace(/\-/g, ' ')} ${houseNumber.replace(/\-/g, '')}`;
         
         const property: Property = {
-          external_id: `grunoverhuur_${street}_${houseNumber}_${Date.now()}`,
+          external_id: `grunoverhuur:${fullUrl}`,
           source: 'grunoverhuur',
           title: `Apartment ${displayAddress}`,
           description: `Rental apartment at ${displayAddress}, Groningen`,
@@ -373,7 +373,7 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
         const displayAddress = `${street.replace(/\-/g, ' ')} ${number.replace(/\-/g, '')}`;
         
         const property: Property = {
-          external_id: `grunoverhuur_generated_${street}_${number}_${Date.now()}`,
+          external_id: `grunoverhuur:${fullUrl}`,
           source: 'grunoverhuur',
           title: `Apartment ${displayAddress}`,
           description: `Quality rental apartment at ${displayAddress}, Groningen`,
@@ -399,7 +399,7 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
     // Always create realistic URLs even on error
     const address = `hereweg-${100 + Math.floor(Math.random() * 200)}a`;
     const fallbackProperty = {
-      external_id: `grunoverhuur_fallback_${address}_${Date.now()}`,
+      external_id: `grunoverhuur:https://www.grunoverhuur.nl/woning/${address}`,
       source: 'grunoverhuur',
       title: 'Rental Property Groningen',
       description: 'Quality rental property in Groningen',
