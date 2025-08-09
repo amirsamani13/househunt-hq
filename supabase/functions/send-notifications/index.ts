@@ -258,8 +258,6 @@ serve(async (req) => {
     console.log(`Found ${newProperties?.length || 0} new properties from the last hour`);
 
     let notificationsSent = 0;
-    const notifications: any[] = [];
-    const notifiedPairs = new Set<string>();
 
     // Process each alert against new properties
     for (const alert of alerts || []) {
@@ -276,46 +274,34 @@ serve(async (req) => {
       }
 
       for (const property of newProperties || []) {
-        if (matchesAlert(property, alert)) {
-          const key = `${alert.user_id}|${property.id}`;
-          if (notifiedPairs.has(key)) continue;
+        if (!matchesAlert(property, alert)) continue;
 
-          // Check if user was already notified about this property (any alert)
-          const { data: existingNotification } = await supabase
-            .from('notifications')
-            .select('id')
-            .eq('user_id', alert.user_id)
-            .eq('property_id', property.id)
-            .maybeSingle();
+        const message = createNotificationMessage(property, alert.name);
+        // Atomically record the notification first to avoid duplicate sends across concurrent runs
+        const { data: inserted, error: upsertError } = await supabase
+          .from('notifications')
+          .upsert({
+            user_id: alert.user_id,
+            property_id: property.id,
+            alert_id: alert.id,
+            message,
+            sent_at: new Date().toISOString()
+          }, { onConflict: 'user_id,property_id', ignoreDuplicates: true })
+          .select('id');
 
-          if (!existingNotification) {
-            const message = createNotificationMessage(property, alert.name);
-            
-            // Send email notification only (for now)
-            if (userProfile?.email) {
-              await sendNotifications(property, alert, userProfile);
-            }
-            
-            notifications.push({
-              user_id: alert.user_id,
-              property_id: property.id,
-              alert_id: alert.id,
-              message,
-              sent_at: new Date().toISOString()
-            });
-            
-            notificationsSent++;
-            notifiedPairs.add(key);
+        if (upsertError) {
+          console.error('Failed to upsert notification record', upsertError);
+          continue;
+        }
+
+        // If a row was returned, it means a new record was inserted (not ignored)
+        if (inserted && inserted.length > 0) {
+          if (userProfile?.email) {
+            await sendNotifications(property, alert, userProfile);
           }
+          notificationsSent++;
         }
       }
-    }
-
-    // Batch insert notifications
-    if (notifications.length > 0) {
-      const { error: insertError } = await supabase
-        .from('notifications')
-        .upsert(notifications, { onConflict: 'user_id,property_id', ignoreDuplicates: true });
     }
 
     console.log(`Sent ${notificationsSent} notifications`);
