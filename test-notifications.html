@@ -97,7 +97,10 @@
 
         async function runNotifications() {
             log('📧 Starting notification sender...');
-            await callFunction('send-notifications');
+            const input = document.getElementById('testEmail');
+            const to = input?.value?.trim();
+            const body = to ? { only_user_email: to, windowHours: 24, test: true } : { windowHours: 24 };
+            await callFunction('send-notifications', 'POST', body);
         }
 
         async function runTestEmail() {

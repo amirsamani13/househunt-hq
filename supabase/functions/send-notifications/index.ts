@@ -231,31 +231,61 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    // Get all active user alerts
-    const { data: alerts, error: alertsError } = await supabase
+    // Parse optional request body for test/filters
+    let body: any = null;
+    try {
+      body = await req.json();
+    } catch (_) {
+      body = null;
+    }
+    const windowHours = Number(body?.windowHours ?? 24);
+    const onlyUserEmail: string | undefined = body?.only_user_email;
+
+    // Optionally resolve user by email
+    let userIdFilter: string | undefined;
+    if (onlyUserEmail) {
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('user_id')
+        .eq('email', onlyUserEmail)
+        .maybeSingle();
+      if (profileError) {
+        throw profileError;
+      }
+      userIdFilter = profile?.user_id;
+      console.log(`Filtering alerts to user with email=${onlyUserEmail}, user_id=${userIdFilter ?? 'not found'}`);
+    }
+
+    // Get active alerts (optionally filtered by user)
+    let alertsQuery = supabase
       .from('user_alerts')
       .select('*')
       .eq('is_active', true);
+    if (userIdFilter) {
+      alertsQuery = alertsQuery.eq('user_id', userIdFilter);
+    }
+    const { data: alerts, error: alertsError } = await alertsQuery;
 
     if (alertsError) {
       throw alertsError;
     }
 
-    console.log(`Found ${alerts?.length || 0} active alerts`);
+    console.log(`Found ${alerts?.length || 0} active alerts${userIdFilter ? ' for specified user' : ''}`);
 
-    // Get new properties from the last 5 minutes for near real-time notifications
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    // Get new properties within windowHours (default 24h)
+    const hours = isNaN(windowHours) ? 24 : windowHours;
+    const cutoffIso = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
     const { data: newProperties, error: propertiesError } = await supabase
       .from('properties')
       .select('*')
-      .gte('first_seen_at', fiveMinutesAgo)
+      .gte('first_seen_at', cutoffIso)
       .eq('is_active', true);
 
     if (propertiesError) {
       throw propertiesError;
     }
 
-    console.log(`Found ${newProperties?.length || 0} new properties from the last hour`);
+    console.log(`Found ${newProperties?.length || 0} new properties from the last ${hours} hours`);
 
     let notificationsSent = 0;
 
