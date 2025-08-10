@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
+const RESEND_FROM = Deno.env.get("RESEND_FROM_EMAIL") || "Property Alerts <onboarding@resend.dev>";
 
 interface TestEmailBody {
   to?: string;
@@ -45,7 +46,7 @@ serve(async (req) => {
     `;
 
     const emailResponse = await resend.emails.send({
-      from: "Lovable Test <onboarding@resend.dev>",
+      from: RESEND_FROM,
       to: [to],
       subject,
       html,

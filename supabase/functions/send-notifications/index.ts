@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { Resend } from "npm:resend@2.0.0";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
+const RESEND_FROM = Deno.env.get("RESEND_FROM_EMAIL") || "Property Alerts <onboarding@resend.dev>";
 
 // Twilio configuration
 const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
@@ -216,7 +217,7 @@ async function sendNotifications(property: Property, alert: UserAlert, userProfi
     try {
       const emailHTML = createEmailHTML(property, alert.name);
       await resend.emails.send({
-        from: "Property Alert <onboarding@resend.dev>",
+        from: RESEND_FROM,
         to: [userProfile.email],
         subject: `🏠 New Property Match: ${property.title}`,
         html: emailHTML,
