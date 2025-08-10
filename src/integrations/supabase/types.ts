@@ -17,6 +17,9 @@ export type Database = {
       notifications: {
         Row: {
           alert_id: string | null
+          delivered_at: string | null
+          delivery_error: string | null
+          delivery_status: string
           id: string
           is_read: boolean | null
           message: string
@@ -26,6 +29,9 @@ export type Database = {
         }
         Insert: {
           alert_id?: string | null
+          delivered_at?: string | null
+          delivery_error?: string | null
+          delivery_status?: string
           id?: string
           is_read?: boolean | null
           message: string
@@ -35,6 +41,9 @@ export type Database = {
         }
         Update: {
           alert_id?: string | null
+          delivered_at?: string | null
+          delivery_error?: string | null
+          delivery_status?: string
           id?: string
           is_read?: boolean | null
           message?: string
