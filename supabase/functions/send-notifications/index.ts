@@ -298,13 +298,26 @@ serve(async (req) => {
         .eq('user_id', alert.user_id)
         .maybeSingle();
 
-      // Skip this user if they paused notifications
+      // Respect pause state even in test mode
       if (userProfile?.notifications_paused) {
         continue;
       }
 
+      let sentForAlert = 0;
       for (const property of newProperties || []) {
-        if (!matchesAlert(property, alert)) continue;
+        const match = body?.test ? true : matchesAlert(property, alert);
+        if (!match) continue;
+
+        if (body?.test) {
+          // Test mode: send without recording to DB (no de-dup), cap to a few emails
+          if (userProfile?.email) {
+            await sendNotifications(property, alert, userProfile);
+            notificationsSent++;
+            sentForAlert++;
+            if (sentForAlert >= 3) break; // avoid spamming during tests
+          }
+          continue;
+        }
 
         const message = createNotificationMessage(property, alert.name);
         // Atomically record the notification first to avoid duplicate sends across concurrent runs
