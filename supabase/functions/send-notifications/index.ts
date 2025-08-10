@@ -156,6 +156,20 @@ function createEmailHTML(property: Property, alertName: string): string {
   `;
 }
 
+async function checkUrlAvailable(url: string): Promise<{ ok: boolean; status: number }> {
+  try {
+    // Try HEAD first
+    const headResp = await fetch(url, { method: 'HEAD' });
+    if (headResp.ok) return { ok: true, status: headResp.status };
+    // Some sites block HEAD; fallback to GET
+    const getResp = await fetch(url, { method: 'GET', redirect: 'follow' });
+    return { ok: getResp.ok, status: getResp.status };
+  } catch (e) {
+    console.error('URL check failed for', url, e);
+    return { ok: false, status: 0 };
+  }
+}
+
 async function sendSMS(to: string, message: string): Promise<boolean> {
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
     console.error("Twilio credentials not configured");
@@ -304,7 +318,24 @@ serve(async (req) => {
       }
 
       let sentForAlert = 0;
+      let skipped404 = 0;
       for (const property of newProperties || []) {
+        // Validate listing URL before sending
+        try {
+          const { ok, status } = await checkUrlAvailable(property.url);
+          if (!ok && (status === 404 || status === 410)) {
+            console.log(`Property ${property.id} url not available (status ${status}). Marking inactive and skipping.`);
+            await supabase
+              .from('properties')
+              .update({ is_active: false, last_updated_at: new Date().toISOString() })
+              .eq('id', property.id);
+            skipped404++;
+            continue;
+          }
+        } catch (e) {
+          console.error('Error validating property URL', property.url, e);
+        }
+
         const match = body?.test ? true : matchesAlert(property, alert);
         if (!match) continue;
 
@@ -343,6 +374,8 @@ serve(async (req) => {
             await sendNotifications(property, alert, userProfile);
           }
           notificationsSent++;
+        } else {
+          console.log(`Duplicate notification for user ${alert.user_id} and property ${property.id} — already sent.`);
         }
       }
     }
