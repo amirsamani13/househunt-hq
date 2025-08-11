@@ -424,7 +424,23 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
       if (!href) continue;
       const fullUrl = href.startsWith('http') ? href : `${domain ?? new URL(url).origin}${href}`;
       if (seen.has(fullUrl)) continue; seen.add(fullUrl);
-      const slug = fullUrl.split('/').filter(Boolean).slice(-2).join(' ').replace(/[-_]/g, ' ');
+
+      // Build clean pathname without query/hash and skip obvious category/overview URLs
+      let pathname = '';
+      try { pathname = new URL(fullUrl).pathname; } catch { pathname = fullUrl.split('?')[0]; }
+      const segments = pathname.split('/').filter(Boolean);
+      const forbidden = new Set(['overzicht', 'huren-groningen', 'woningaanbod', 'aanbod', 'huur', 'zoeken']);
+      const isOverviewLike = segments.length <= 3 && segments.some(s => forbidden.has(s.toLowerCase()));
+      const hasQuery = fullUrl.includes('?');
+      if (isOverviewLike || hasQuery) {
+        // Skip likely non-detail pages to avoid wrong links
+        continue;
+      }
+
+      // Create a readable slug from the last meaningful segments
+      const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).split('-').join(' '));
+      const slug = meaningful.join(' ').trim();
+
       properties.push({
         external_id: `${source}:${fullUrl}`,
         source,
@@ -482,7 +498,7 @@ async function scrapeCampusGroningen(): Promise<Property[]> {
     url: 'https://www.campusgroningen.com/huren-groningen',
     source: 'campusgroningen',
     domain: 'https://www.campusgroningen.com',
-    linkPattern: /href=\"(\/huren-groningen\/[^\"#]+)\"/g,
+    linkPattern: /href=\"(\/huren-groningen\/[^"]+\/[^"]+)\"/g,
     typeDefault: 'room'
   });
 }
@@ -602,7 +618,7 @@ async function scrapePandomo(): Promise<Property[]> {
     url: 'https://www.pandomo.nl/overzicht/?filter-group-id=1&filter%5B66%5D=GRONINGEN',
     source: 'pandomo',
     domain: 'https://www.pandomo.nl',
-    linkPattern: /href=\"(\/overzicht\/[^\"#]+)\"/g,
+    linkPattern: /href=\"(\/(?:aanbod|woning|objecten|huur)\/[^\"#]+)\"/g,
     typeDefault: 'apartment'
   });
 }

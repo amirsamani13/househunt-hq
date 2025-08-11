@@ -262,8 +262,9 @@ serve(async (req) => {
     } catch (_) {
       body = null;
     }
-    const windowHours = Number(body?.windowHours ?? 24);
-    const onlyUserEmail: string | undefined = body?.only_user_email;
+const windowHours = Number(body?.windowHours ?? 24);
+const onlyUserEmail: string | undefined = body?.only_user_email;
+const testAll: boolean = Boolean(body?.testAll) || body?.test === 'all';
 
     // Optionally resolve user by email
     let userIdFilter: string | undefined;
