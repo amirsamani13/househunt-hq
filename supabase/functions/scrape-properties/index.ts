@@ -484,7 +484,9 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
         continue;
       }
 
-      // Try to fetch detail page to extract real title/address/price - FRESH variables for each property
+      console.log(`Fetching individual property data for: ${fullUrl}`);
+      
+      // CRITICAL: Initialize FRESH variables for each property to prevent data mixing
       let titleFromDetail = '';
       let addressFromDetail = '';
       let priceFromDetail: number | null = null;
@@ -492,20 +494,10 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
       let bathroomsFromDetail: number | null = null;
       let surfaceFromDetail: number | null = null;
       
-      console.log(`Fetching individual property data for: ${fullUrl}`);
-      
       try {
         const detailResp = await fetch(fullUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
         if (detailResp.ok) {
           const detailHtml = await detailResp.text();
-
-          // Reset extraction variables for this specific property
-          titleFromDetail = '';
-          addressFromDetail = '';
-          priceFromDetail = null;
-          bedroomsFromDetail = null;
-          bathroomsFromDetail = null;
-          surfaceFromDetail = null;
 
           // Try JSON-LD first for this specific property
           const ldMatches = Array.from(detailHtml.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi));
@@ -542,8 +534,19 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
             if (h1) titleFromDetail = extractText(h1[1]);
           }
           if (!addressFromDetail) {
-            const addr = detailHtml.match(/class=["'][^"']*(address|adres|street|location)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|h\d)>/i);
-            if (addr) addressFromDetail = extractText(addr[2]);
+            // Multiple address patterns
+            const addrPatterns = [
+              /class=["'][^"']*(address|adres|street|location)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|h\d)>/i,
+              /<(?:div|span)[^>]*class=["'][^"']*street[^"']*["'][^>]*>(.*?)<\/(?:div|span)>/i,
+              /<(?:div|span)[^>]*class=["'][^"']*location[^"']*["'][^>]*>(.*?)<\/(?:div|span)>/i
+            ];
+            for (const pattern of addrPatterns) {
+              const match = detailHtml.match(pattern);
+              if (match) {
+                addressFromDetail = extractText(match[2] || match[1]);
+                break;
+              }
+            }
           }
           if (!priceFromDetail) {
             const priceMatch = detailHtml.match(/(?:€|EUR)\s*([\d\.,]+)/i);
@@ -608,10 +611,21 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
       const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).split('-').join(' '));
       const slug = meaningful.join(' ').trim();
 
-      // Extra validation: if the extracted title still contains URL artifacts, reject it
-      let candidateTitle = addressFromDetail || titleFromDetail || slug || `${typeDefault} in Groningen`;
+      // Clean up extracted title/address and create final title
+      let cleanTitle = titleFromDetail || addressFromDetail || '';
+      let cleanAddress = addressFromDetail || '';
+      
+      // Remove URL artifacts and unwanted characters from title
+      cleanTitle = cleanTitle.replace(/[?&=]/g, '').replace(/\b(filter|overzicht|huren|groningen)\b/gi, '').trim();
+      cleanAddress = cleanAddress.replace(/[?&=]/g, '').trim();
+      
+      // Build final title - prefer clean address, fallback to extracted title, then slug
+      let candidateTitle = cleanAddress || cleanTitle || slug || `${typeDefault} in Groningen`;
+      
+      // Extra validation: reject if still contains artifacts
       if (candidateTitle.includes('?') || candidateTitle.includes('&') || candidateTitle.includes('=') || 
-          candidateTitle.includes('filter') || candidateTitle.includes('overzicht')) {
+          candidateTitle.includes('filter') || candidateTitle.includes('overzicht') ||
+          /\b[a-z0-9]{8,}\b/i.test(candidateTitle)) { // reject random IDs like t38e404944
         console.log(`Rejecting property with bad title: ${candidateTitle}`);
         continue;
       }
