@@ -776,13 +776,78 @@ async function scrapeWoldring(): Promise<Property[]> {
 }
 
 async function scrape050Vastgoed(): Promise<Property[]> {
-  return scrapeGeneric({
-    url: 'https://050vastgoed.nl/woningaanbod/huur/groningen?locationofinterest=Groningen&moveunavailablelistingstothebottom=true&orderby=8',
-    source: '050vastgoed',
-    domain: 'https://050vastgoed.nl',
-    linkPattern: /href=\"(\/woningaanbod\/huur\/groningen\/[^\"#]+)\"/g,
-    typeDefault: 'apartment'
-  });
+  console.log("Starting 050vastgoed scraping...");
+  const properties: Property[] = [];
+  try {
+    const url = 'https://050vastgoed.nl/woningaanbod/huur/groningen';
+    const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const html = await resp.text();
+
+    // Only capture detail-page permalinks, not search/filter results
+    const linkRe = /href=["'](\/woningaanbod\/huur\/groningen\/[a-z0-9\-\/]+)["']/gi;
+    const seen = new Set<string>();
+    const matches = Array.from(html.matchAll(linkRe));
+    for (const m of matches) {
+      const href = m[1];
+      const fullUrl = `https://050vastgoed.nl${href}`;
+      if (seen.has(fullUrl)) continue; seen.add(fullUrl);
+      
+      // Skip URLs with query parameters or that are too short (overview pages)
+      if (fullUrl.includes('?') || fullUrl.includes('&') || fullUrl.includes('=')) {
+        console.log(`Skipping query URL: ${fullUrl}`);
+        continue;
+      }
+      
+      const path = new URL(fullUrl).pathname;
+      const segs = path.split('/').filter(Boolean);
+      if (segs.length < 5) continue; // Need at least /woningaanbod/huur/groningen/street/property
+
+      try {
+        const d = await fetch(fullUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+        if (!d.ok) continue;
+        const dh = await d.text();
+        let title = '';
+        const og = dh.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i);
+        if (og) title = og[1];
+        if (!title) {
+          const h1 = dh.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+          if (h1) title = extractText(h1[1]);
+        }
+        const addrMatch = dh.match(/class=["'][^"']*(address|adres|street|location)[^"']*["'][^>]*>([\s\S]*?)<\//i);
+        const address = addrMatch ? extractText(addrMatch[2]) : undefined;
+        const priceMatch = dh.match(/(?:€|EUR)\s*([\d\.,]+)/i);
+        const price = priceMatch ? parseInt(priceMatch[1].replace(/[.,]/g, '')) : undefined;
+        
+        // Skip if title contains URL artifacts
+        if (!title || title.includes('?') || title.includes('&') || title.includes('=') || /overzicht|filter/i.test(title)) {
+          console.log(`Skipping property with bad title: ${title}`);
+          continue;
+        }
+
+        properties.push({
+          external_id: `050vastgoed:${fullUrl}`,
+          source: '050vastgoed',
+          title: sanitizeTitle(title),
+          description: address ? `Apartment at ${sanitizeAddress(address)}` : undefined,
+          address: sanitizeAddress(address || 'Groningen, Netherlands'),
+          property_type: 'apartment',
+          bedrooms: undefined,
+          bathrooms: undefined,
+          surface_area: undefined,
+          url: fullUrl,
+          image_urls: [],
+          features: [],
+          city: 'Groningen',
+          price,
+        });
+        if (properties.length >= 5) break;
+      } catch { /* ignore */ }
+    }
+  } catch (e) {
+    console.error('050vastgoed scrape failed:', e);
+  }
+  return properties;
 }
 
 async function scrapePandomo(): Promise<Property[]> {
@@ -868,14 +933,30 @@ async function saveProperties(supabase: any, properties: Property[], source: str
   console.log(`${newProperties.length} new properties to save for ${source}`);
   
   if (newProperties.length > 0) {
-    const { error: insertError } = await supabase
-      .from('properties')
-      .insert(newProperties);
-      
-    if (insertError) {
-      console.error("Error inserting properties:", insertError);
-      throw insertError;
+    // Final validation before saving - reject any properties with bad titles/URLs
+    const cleanProperties = newProperties.filter(p => {
+      const hasCleanTitle = p.title && !p.title.includes('?') && !p.title.includes('&') && !p.title.includes('=');
+      const hasCleanUrl = p.url && !p.url.includes('?') && !p.url.includes('&');
+      const isValid = hasCleanTitle && hasCleanUrl;
+      if (!isValid) {
+        console.log(`Rejecting property with contaminated data: ${p.title} | ${p.url}`);
+      }
+      return isValid;
+    });
+    
+    if (cleanProperties.length > 0) {
+      const { error: insertError } = await supabase
+        .from('properties')
+        .insert(cleanProperties);
+        
+      if (insertError) {
+        console.error("Error inserting properties:", insertError);
+        throw insertError;
+      }
     }
+    
+    console.log(`${cleanProperties.length} clean properties saved (${newProperties.length - cleanProperties.length} rejected)`);
+    return cleanProperties.length;
   }
   
   return newProperties.length;
