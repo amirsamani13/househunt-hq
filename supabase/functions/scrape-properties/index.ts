@@ -484,18 +484,30 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
         continue;
       }
 
-      // Try to fetch detail page to extract real title/address/price
+      // Try to fetch detail page to extract real title/address/price - FRESH variables for each property
       let titleFromDetail = '';
       let addressFromDetail = '';
       let priceFromDetail: number | null = null;
       let bedroomsFromDetail: number | null = null;
+      let bathroomsFromDetail: number | null = null;
       let surfaceFromDetail: number | null = null;
+      
+      console.log(`Fetching individual property data for: ${fullUrl}`);
+      
       try {
         const detailResp = await fetch(fullUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
         if (detailResp.ok) {
           const detailHtml = await detailResp.text();
 
-          // Try JSON-LD first
+          // Reset extraction variables for this specific property
+          titleFromDetail = '';
+          addressFromDetail = '';
+          priceFromDetail = null;
+          bedroomsFromDetail = null;
+          bathroomsFromDetail = null;
+          surfaceFromDetail = null;
+
+          // Try JSON-LD first for this specific property
           const ldMatches = Array.from(detailHtml.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi));
           for (const m of ldMatches) {
             try {
@@ -512,12 +524,15 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
                   if (!priceFromDetail && (node.offers?.price || node.price)) {
                     priceFromDetail = Number(node.offers?.price || node.price) || null;
                   }
+                  if (!bedroomsFromDetail && node.numberOfRooms) {
+                    bedroomsFromDetail = Number(node.numberOfRooms) || null;
+                  }
                 }
               }
             } catch (_) { /* ignore JSON errors */ }
           }
 
-          // Fallbacks: og:title, h1, address-like elements
+          // Enhanced extraction patterns for this specific property
           if (!titleFromDetail) {
             const og = detailHtml.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i);
             if (og) titleFromDetail = og[1];
@@ -534,16 +549,60 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
             const priceMatch = detailHtml.match(/(?:€|EUR)\s*([\d\.,]+)/i);
             if (priceMatch) priceFromDetail = parseInt(priceMatch[1].replace(/[.,]/g, ''));
           }
+          
+          // More specific bedroom extraction for this property
           if (!bedroomsFromDetail) {
-            const bed = detailHtml.match(/(\d+)\s*(?:bed(?:room)?s?|slaapkamers?)/i);
-            if (bed) bedroomsFromDetail = parseInt(bed[1]);
+            const bedPatterns = [
+              /(\d+)\s*(?:bed(?:room)?s?|slaapkamers?)/i,
+              /(?:bed(?:room)?s?|slaapkamers?)\s*[:\-]?\s*(\d+)/i,
+              /(\d+)\s*room/i,
+              /room.*?(\d+)/i
+            ];
+            for (const pattern of bedPatterns) {
+              const match = detailHtml.match(pattern);
+              if (match) {
+                bedroomsFromDetail = parseInt(match[1]);
+                break;
+              }
+            }
           }
+          
+          // Bathroom extraction for this property
+          if (!bathroomsFromDetail) {
+            const bathPatterns = [
+              /(\d+)\s*(?:bath(?:room)?s?|badkamers?)/i,
+              /(?:bath(?:room)?s?|badkamers?)\s*[:\-]?\s*(\d+)/i
+            ];
+            for (const pattern of bathPatterns) {
+              const match = detailHtml.match(pattern);
+              if (match) {
+                bathroomsFromDetail = parseInt(match[1]);
+                break;
+              }
+            }
+          }
+          
+          // Surface area extraction for this property
           if (!surfaceFromDetail) {
-            const surf = detailHtml.match(/(\d+)\s*m(?:²|2)/i);
-            if (surf) surfaceFromDetail = parseInt(surf[1]);
+            const surfPatterns = [
+              /(\d+)\s*m(?:²|2)/i,
+              /(\d+)\s*square\s*m/i,
+              /size[:\-]?\s*(\d+)/i
+            ];
+            for (const pattern of surfPatterns) {
+              const match = detailHtml.match(pattern);
+              if (match) {
+                surfaceFromDetail = parseInt(match[1]);
+                break;
+              }
+            }
           }
+          
+          console.log(`Extracted data for ${fullUrl}: beds=${bedroomsFromDetail}, baths=${bathroomsFromDetail}, surface=${surfaceFromDetail}m²`);
         }
-      } catch (_) { /* ignore detail errors */ }
+      } catch (err) { 
+        console.error(`Error fetching detail for ${fullUrl}:`, err);
+      }
 
       // Create a readable slug from the last meaningful segments as final fallback
       const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).split('-').join(' '));
@@ -559,23 +618,24 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
       
       const finalTitle = sanitizeTitle(candidateTitle);
 
-properties.push({
-  external_id: `${source}:${fullUrl}`,
-  source,
-  title: finalTitle,
-  description: addressFromDetail ? `Rental ${typeDefault} at ${sanitizeAddress(addressFromDetail)}` : undefined,
-  address: sanitizeAddress(addressFromDetail || 'Groningen, Netherlands'),
-  postal_code: null,
-  property_type: typeDefault,
-  bedrooms: bedroomsFromDetail ?? undefined,
-  bathrooms: undefined,
-  surface_area: surfaceFromDetail ?? undefined,
-  url: fullUrl,
-  image_urls: [],
-  features: [],
-  city: 'Groningen',
-  price: priceFromDetail ?? undefined,
-});
+      // Create property with UNIQUE data extracted for THIS specific property
+      properties.push({
+        external_id: `${source}:${fullUrl}`,
+        source,
+        title: finalTitle,
+        description: addressFromDetail ? `Rental ${typeDefault} at ${sanitizeAddress(addressFromDetail)}` : undefined,
+        address: sanitizeAddress(addressFromDetail || 'Groningen, Netherlands'),
+        postal_code: null,
+        property_type: typeDefault,
+        bedrooms: bedroomsFromDetail ?? undefined,
+        bathrooms: bathroomsFromDetail ?? undefined,
+        surface_area: surfaceFromDetail ?? undefined,
+        url: fullUrl,
+        image_urls: [],
+        features: [],
+        city: 'Groningen',
+        price: priceFromDetail ?? undefined,
+      });
     }
   } catch (e) {
     console.error(`Error scraping ${source}:`, e);
