@@ -347,16 +347,17 @@ const testAll: boolean = Boolean(body?.testAll) || body?.test === 'all';
           console.error('Error validating property URL', property.url, e);
         }
 
-        const match = body?.test ? true : matchesAlert(property, alert);
+        const inTest = testAll || Boolean(body?.test);
+        const match = inTest ? true : matchesAlert(property, alert);
         if (!match) continue;
 
-        if (body?.test) {
-          // Test mode: send without recording to DB (no de-dup), cap to a few emails
+        if (inTest) {
+          // Test mode: send without recording to DB (no de-dup). If testAll=true, send ALL within window.
           if (userProfile?.email) {
             await sendNotifications(property, alert, userProfile);
             notificationsSent++;
             sentForAlert++;
-            if (sentForAlert >= 3) break; // avoid spamming during tests
+            if (!testAll && sentForAlert >= 3) break; // cap only when not sending all
           }
           continue;
         }

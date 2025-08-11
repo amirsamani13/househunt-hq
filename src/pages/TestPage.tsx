@@ -113,7 +113,41 @@ export default function TestPage() {
       });
     }
   };
+  // Fetch properties from the last 24 hours (all sources)
+  const fetchLast24h = async () => {
+    try {
+      const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data, error } = await supabase
+        .from('properties')
+        .select('*')
+        .gte('first_seen_at', cutoffIso)
+        .eq('is_active', true)
+        .order('first_seen_at', { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      setProperties(data || []);
+      toast({ title: 'Last 24h Loaded', description: `Showing ${data?.length || 0} properties from last 24 hours` });
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message || 'Failed to fetch last 24h', variant: 'destructive' });
+    }
+  };
 
+  // Send notifications for last 24h to current user (send-all test)
+  const sendNotifications24hAll = async () => {
+    if (!user) {
+      toast({ title: 'Login required', description: 'Please sign in to send test notifications', variant: 'destructive' });
+      return;
+    }
+    try {
+      const { data, error } = await supabase.functions.invoke('send-notifications', {
+        body: { windowHours: 24, testAll: true, only_user_email: user.email }
+      });
+      if (error) throw error;
+      toast({ title: 'Notifications sent', description: `Result: ${data?.message || 'Done'}` });
+    } catch (error: any) {
+      toast({ title: 'Failed', description: error.message || 'Could not send notifications', variant: 'destructive' });
+    }
+  };
 
   const updatePause = async (value: boolean) => {
     if (!user) {
@@ -141,22 +175,33 @@ export default function TestPage() {
               Back to Home
             </Link>
             <h1 className="text-2xl font-bold">Test Scraping</h1>
-            <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                onClick={fetchProperties}
-                disabled={isLoading}
-              >
-                <Database className="w-4 h-4 mr-2" />
-                View Properties
-              </Button>
-              <Button variant="destructive" onClick={() => updatePause(true)}>
-                Pause notifications
-              </Button>
-              <Button variant="secondary" onClick={() => updatePause(false)}>
-                Resume
-              </Button>
-            </div>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  onClick={fetchProperties}
+                  disabled={isLoading}
+                >
+                  <Database className="w-4 h-4 mr-2" />
+                  View Properties
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={fetchLast24h}
+                  disabled={isLoading}
+                >
+                  <Database className="w-4 h-4 mr-2" />
+                  View Last 24h
+                </Button>
+                <Button onClick={sendNotifications24hAll} disabled={isLoading || !user}>
+                  Send 24h to Me
+                </Button>
+                <Button variant="destructive" onClick={() => updatePause(true)}>
+                  Pause notifications
+                </Button>
+                <Button variant="secondary" onClick={() => updatePause(false)}>
+                  Resume
+                </Button>
+              </div>
           </div>
         </div>
       </header>

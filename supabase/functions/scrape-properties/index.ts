@@ -437,25 +437,89 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
         continue;
       }
 
-      // Create a readable slug from the last meaningful segments
+      // Try to fetch detail page to extract real title/address/price
+      let titleFromDetail = '';
+      let addressFromDetail = '';
+      let priceFromDetail: number | null = null;
+      let bedroomsFromDetail: number | null = null;
+      let surfaceFromDetail: number | null = null;
+      try {
+        const detailResp = await fetch(fullUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+        if (detailResp.ok) {
+          const detailHtml = await detailResp.text();
+
+          // Try JSON-LD first
+          const ldMatches = Array.from(detailHtml.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi));
+          for (const m of ldMatches) {
+            try {
+              const json = JSON.parse(m[1]);
+              const nodes = Array.isArray(json) ? json : [json];
+              for (const node of nodes) {
+                if (typeof node === 'object') {
+                  if (!titleFromDetail && (node.name || node.headline)) titleFromDetail = String(node.name || node.headline);
+                  if (!addressFromDetail && node.address && (node.address.streetAddress || node.address.addressLocality)) {
+                    const street = node.address.streetAddress || '';
+                    const city = node.address.addressLocality || '';
+                    addressFromDetail = [street, city].filter(Boolean).join(', ');
+                  }
+                  if (!priceFromDetail && (node.offers?.price || node.price)) {
+                    priceFromDetail = Number(node.offers?.price || node.price) || null;
+                  }
+                }
+              }
+            } catch (_) { /* ignore JSON errors */ }
+          }
+
+          // Fallbacks: og:title, h1, address-like elements
+          if (!titleFromDetail) {
+            const og = detailHtml.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i);
+            if (og) titleFromDetail = og[1];
+          }
+          if (!titleFromDetail) {
+            const h1 = detailHtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+            if (h1) titleFromDetail = extractText(h1[1]);
+          }
+          if (!addressFromDetail) {
+            const addr = detailHtml.match(/class=["'][^"']*(address|adres|street|location)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|h\d)>/i);
+            if (addr) addressFromDetail = extractText(addr[2]);
+          }
+          if (!priceFromDetail) {
+            const priceMatch = detailHtml.match(/(?:€|EUR)\s*([\d\.,]+)/i);
+            if (priceMatch) priceFromDetail = parseInt(priceMatch[1].replace(/[.,]/g, ''));
+          }
+          if (!bedroomsFromDetail) {
+            const bed = detailHtml.match(/(\d+)\s*(?:bed(?:room)?s?|slaapkamers?)/i);
+            if (bed) bedroomsFromDetail = parseInt(bed[1]);
+          }
+          if (!surfaceFromDetail) {
+            const surf = detailHtml.match(/(\d+)\s*m(?:²|2)/i);
+            if (surf) surfaceFromDetail = parseInt(surf[1]);
+          }
+        }
+      } catch (_) { /* ignore detail errors */ }
+
+      // Create a readable slug from the last meaningful segments as final fallback
       const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).split('-').join(' '));
       const slug = meaningful.join(' ').trim();
+
+      const finalTitle = (addressFromDetail || titleFromDetail || slug || `${typeDefault} in Groningen`).trim().slice(0, 200);
 
       properties.push({
         external_id: `${source}:${fullUrl}`,
         source,
-        title: `${typeDefault[0].toUpperCase() + typeDefault.slice(1)} ${slug || 'in Groningen'}`.slice(0, 200),
-        description: `Rental ${typeDefault} in Groningen`,
-        address: 'Groningen, Netherlands',
+        title: finalTitle,
+        description: `Rental ${typeDefault} ${addressFromDetail ? 'at ' + addressFromDetail : 'in Groningen'}`,
+        address: addressFromDetail || 'Groningen, Netherlands',
         postal_code: null,
         property_type: typeDefault,
-        bedrooms: typeDefault === 'room' ? 1 : 2,
+        bedrooms: bedroomsFromDetail ?? (typeDefault === 'room' ? 1 : 2),
         bathrooms: 1,
-        surface_area: typeDefault === 'room' ? 16 : 60,
+        surface_area: surfaceFromDetail ?? (typeDefault === 'room' ? 16 : 60),
         url: fullUrl,
         image_urls: [],
         features: [],
-        city: 'Groningen'
+        city: 'Groningen',
+        price: priceFromDetail ?? undefined,
       });
     }
   } catch (e) {
