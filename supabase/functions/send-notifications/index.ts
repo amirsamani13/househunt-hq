@@ -310,12 +310,12 @@ const testAll: boolean = Boolean(body?.testAll) || body?.test === 'all';
       throw propertiesError;
     }
 
-    const safeProperties = (newProperties || []).filter((p: any) => {
-      const u = String(p.url || '');
-      const title = String(p.title || '');
-      const path = u.split('?')[0].toLowerCase();
-      return u && !u.includes('?') && !path.includes('/overzicht') && !/overzicht|\?|filter/i.test(title);
-    });
+const safeProperties = (newProperties || []).filter((p: any) => {
+  const u = String(p.url || '');
+  const title = String(p.title || '');
+  const path = u.split('?')[0].toLowerCase();
+  return u && !u.includes('?') && !path.includes('/overzicht') && !/overzicht|\?|filter|page|sort/i.test(title);
+});
 
     console.log(`Found ${safeProperties.length} valid properties from the last ${hours} hours (filtered from ${newProperties?.length || 0})`);
     let notificationsSent = 0;

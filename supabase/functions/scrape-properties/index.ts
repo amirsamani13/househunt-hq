@@ -42,6 +42,33 @@ function extractPrice(text: string): number | null {
   return match ? parseFloat(match[1]) : null;
 }
 
+// Sanitization helpers to keep titles/addresses clean (no query strings)
+function sanitizeTitle(input: string): string {
+  let t = (input || '').toString();
+  t = t.replace(/&amp;/g, '&');
+  // Remove query/hash fragments if accidentally present in strings
+  t = t.split('?')[0].split('#')[0];
+  // Remove obvious non-title words
+  t = t.replace(/\b(overzicht|aanbod|zoeken|filters?|page\s*\d+|sort\s*(?:newest|pricelow|pricehigh))\b/gi, '');
+  // Strip brand suffixes like " - Pandomo" or " | Funda"
+  t = t.replace(/\s*[\-|–—|•]\s*(pararius|kamernet|grunoverhuur|funda|campusgroningen|rotsvast|expatrentalsholland|vandermeulen|housinganywhere|dcwonen|huure|maxxhuren|kpmakelaars|househunting|woldringverhuur|050vastgoed)\s*$/i, '');
+  // Collapse spaces
+  t = t.replace(/\s{2,}/g, ' ').trim();
+  if (!t) t = 'Property in Groningen';
+  if (t.length > 200) t = t.slice(0, 200);
+  return t;
+}
+
+function sanitizeAddress(input?: string): string {
+  if (!input) return 'Groningen, Netherlands';
+  let t = String(input);
+  t = t.replace(/&amp;/g, '&');
+  t = t.split('?')[0].split('#')[0];
+  t = t.replace(/\s{2,}/g, ' ').trim();
+  if (t.length > 200) t = t.slice(0, 200);
+  return t;
+}
+
 async function scrapePararius(): Promise<Property[]> {
   console.log("Starting Pararius scraping...");
   const properties: Property[] = [];
@@ -106,22 +133,22 @@ async function scrapePararius(): Promise<Property[]> {
         const imageMatch = listing.match(/data-src="([^"]*\.jpg[^"]*)"/);
         const image_urls = imageMatch ? [imageMatch[1]] : [];
         
-        const property: Property = {
-          external_id: `pararius:${url}`,
-          source: 'pararius',
-          title: title.substring(0, 200),
-          description: `${title} in ${address}`,
-          price,
-          address: address.substring(0, 200),
-          postal_code: extractPostalCode(address),
-          property_type: 'apartment',
-          bedrooms,
-          bathrooms: 1,
-          surface_area,
-          url,
-          image_urls,
-          features: extractFeatures(listing)
-        };
+const property: Property = {
+  external_id: `pararius:${url}`,
+  source: 'pararius',
+  title: sanitizeTitle(title),
+  description: `${sanitizeTitle(title)} in ${sanitizeAddress(address)}`,
+  price,
+  address: sanitizeAddress(address),
+  postal_code: extractPostalCode(address),
+  property_type: 'apartment',
+  bedrooms,
+  bathrooms: 1,
+  surface_area,
+  url,
+  image_urls,
+  features: extractFeatures(listing)
+};
         
         properties.push(property);
         console.log(`Added REAL property: ${title} - ${url}`);
@@ -260,23 +287,23 @@ async function scrapeKamernet(): Promise<Property[]> {
       const streetSlug = parts[parts.length - 2] || 'groningen';
       const type = relativeUrl.includes('/room-') ? 'room' : relativeUrl.includes('/studio-') ? 'studio' : 'apartment';
 
-      const property: Property = {
-        external_id: `kamernet:${fullUrl}`,
-        source: 'kamernet',
-        title: `${type === 'room' ? 'Room' : type === 'studio' ? 'Studio' : 'Apartment'} ${streetSlug.replace(/-/g, ' ')}`.slice(0, 200),
-        description: `Listing on ${streetSlug.replace(/-/g, ' ')}, Groningen`,
-        price: undefined,
-        address: `${streetSlug.replace(/-/g, ' ')}, Groningen, Netherlands`,
-        postal_code: null,
-        property_type: type,
-        bedrooms: type === 'room' ? 1 : 2,
-        bathrooms: 1,
-        surface_area: type === 'room' ? 16 : 60,
-        url: fullUrl,
-        image_urls: [],
-        features: ['Student housing'],
-        city: 'Groningen'
-      };
+const property: Property = {
+  external_id: `kamernet:${fullUrl}`,
+  source: 'kamernet',
+  title: sanitizeTitle(`${type === 'room' ? 'Room' : type === 'studio' ? 'Studio' : 'Apartment'} ${streetSlug.replace(/-/g, ' ')}`),
+  description: `Listing on ${streetSlug.replace(/-/g, ' ')}, Groningen`,
+  price: undefined,
+  address: sanitizeAddress(`${streetSlug.replace(/-/g, ' ')}, Groningen, Netherlands`),
+  postal_code: null,
+  property_type: type,
+  bedrooms: type === 'room' ? 1 : 2,
+  bathrooms: 1,
+  surface_area: type === 'room' ? 16 : 60,
+  url: fullUrl,
+  image_urls: [],
+  features: ['Student housing'],
+  city: 'Groningen'
+};
 
       properties.push(property);
       console.log(`Added VERIFIED Kamernet property: ${fullUrl}`);
@@ -323,22 +350,22 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
         const houseNumber = urlParts[urlParts.length - 1] || `${i}`;
         const displayAddress = `${street.replace(/\-/g, ' ')} ${houseNumber.replace(/\-/g, '')}`;
         
-        const property: Property = {
-          external_id: `grunoverhuur:${fullUrl}`,
-          source: 'grunoverhuur',
-          title: `Apartment ${displayAddress}`,
-          description: `Rental apartment at ${displayAddress}, Groningen`,
-          price: 1200 + (i * 150),
-          address: `${displayAddress}, Groningen, Netherlands`,
-          postal_code: '9700 AB',
-          property_type: 'apartment',
-          bedrooms: 2 + (i % 3),
-          bathrooms: 1,
-          surface_area: 65 + (i * 15),
-          url: fullUrl,
-          image_urls: [],
-          features: ['Available now', 'Modern']
-        };
+const property: Property = {
+  external_id: `grunoverhuur:${fullUrl}`,
+  source: 'grunoverhuur',
+  title: sanitizeTitle(`Apartment ${displayAddress}`),
+  description: `Rental apartment at ${sanitizeAddress(displayAddress)}, Groningen`,
+  price: 1200 + (i * 150),
+  address: sanitizeAddress(`${displayAddress}, Groningen, Netherlands`),
+  postal_code: '9700 AB',
+  property_type: 'apartment',
+  bedrooms: 2 + (i % 3),
+  bathrooms: 1,
+  surface_area: 65 + (i * 15),
+  url: fullUrl,
+  image_urls: [],
+  features: ['Available now', 'Modern']
+};
         
         properties.push(property);
         console.log(`Added REAL Grunoverhuur property with specific URL: ${fullUrl}`);
@@ -360,22 +387,22 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
         const fullUrl = `https://www.grunoverhuur.nl/woningaanbod/huur/groningen/${street}/${number}`;
         const displayAddress = `${street.replace(/\-/g, ' ')} ${number.replace(/\-/g, '')}`;
         
-        const property: Property = {
-          external_id: `grunoverhuur:${fullUrl}`,
-          source: 'grunoverhuur',
-          title: `Apartment ${displayAddress}`,
-          description: `Quality rental apartment at ${displayAddress}, Groningen`,
-          price: 1300 + (i * 200),
-          address: `${displayAddress}, Groningen, Netherlands`,
-          postal_code: '9700 AB',
-          property_type: 'apartment',
-          bedrooms: 2 + i,
-          bathrooms: 1,
-          surface_area: 70 + (i * 20),
-          url: fullUrl,
-          image_urls: [],
-          features: ['Available now', 'Modern']
-        };
+const property: Property = {
+  external_id: `grunoverhuur:${fullUrl}`,
+  source: 'grunoverhuur',
+  title: sanitizeTitle(`Apartment ${displayAddress}`),
+  description: `Quality rental apartment at ${sanitizeAddress(displayAddress)}, Groningen`,
+  price: 1300 + (i * 200),
+  address: sanitizeAddress(`${displayAddress}, Groningen, Netherlands`),
+  postal_code: '9700 AB',
+  property_type: 'apartment',
+  bedrooms: 2 + i,
+  bathrooms: 1,
+  surface_area: 70 + (i * 20),
+  url: fullUrl,
+  image_urls: [],
+  features: ['Available now', 'Modern']
+};
         
         properties.push(property);
         console.log(`Added generated Grunoverhuur property with REAL URL pattern: ${fullUrl}`);
@@ -502,14 +529,14 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
       const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).split('-').join(' '));
       const slug = meaningful.join(' ').trim();
 
-const finalTitle = (addressFromDetail || titleFromDetail || slug || `${typeDefault} in Groningen`).trim().slice(0, 200);
+const finalTitle = sanitizeTitle(addressFromDetail || titleFromDetail || slug || `${typeDefault} in Groningen`);
 
 properties.push({
   external_id: `${source}:${fullUrl}`,
   source,
   title: finalTitle,
-  description: addressFromDetail ? `Rental ${typeDefault} at ${addressFromDetail}` : undefined,
-  address: addressFromDetail || 'Groningen, Netherlands',
+  description: addressFromDetail ? `Rental ${typeDefault} at ${sanitizeAddress(addressFromDetail)}` : undefined,
+  address: sanitizeAddress(addressFromDetail || 'Groningen, Netherlands'),
   postal_code: null,
   property_type: typeDefault,
   bedrooms: bedroomsFromDetail ?? undefined,
@@ -595,22 +622,22 @@ async function scrapeCampusGroningen(): Promise<Property[]> {
         const price = priceMatch ? parseInt(priceMatch[1].replace(/[.,]/g, '')) : undefined;
         if (!title || /overzicht|huren\s*groningen/i.test(title)) continue;
 
-        properties.push({
-          external_id: `campusgroningen:${fullUrl}`,
-          source: 'campusgroningen',
-          title: title.slice(0, 200),
-          description: address ? `Room at ${address}` : undefined,
-          address: address || 'Groningen, Netherlands',
-          property_type: 'room',
-          bedrooms: undefined,
-          bathrooms: undefined,
-          surface_area: undefined,
-          url: fullUrl,
-          image_urls: [],
-          features: [],
-          city: 'Groningen',
-          price,
-        });
+properties.push({
+  external_id: `campusgroningen:${fullUrl}`,
+  source: 'campusgroningen',
+  title: sanitizeTitle(title),
+  description: address ? `Room at ${sanitizeAddress(address)}` : undefined,
+  address: sanitizeAddress(address || 'Groningen, Netherlands'),
+  property_type: 'room',
+  bedrooms: undefined,
+  bathrooms: undefined,
+  surface_area: undefined,
+  url: fullUrl,
+  image_urls: [],
+  features: [],
+  city: 'Groningen',
+  price,
+});
         if (properties.length >= 5) break;
       } catch { /* ignore */ }
     }
@@ -769,22 +796,22 @@ async function scrapePandomo(): Promise<Property[]> {
         const price = priceMatch ? parseInt(priceMatch[1].replace(/[.,]/g, '')) : undefined;
         if (!title || /overzicht/i.test(title)) continue;
 
-        properties.push({
-          external_id: `pandomo:${fullUrl}`,
-          source: 'pandomo',
-          title: title.slice(0, 200),
-          description: address ? `Apartment at ${address}` : undefined,
-          address: address || 'Groningen, Netherlands',
-          property_type: 'apartment',
-          bedrooms: undefined,
-          bathrooms: undefined,
-          surface_area: undefined,
-          url: fullUrl,
-          image_urls: [],
-          features: [],
-          city: 'Groningen',
-          price,
-        });
+properties.push({
+  external_id: `pandomo:${fullUrl}`,
+  source: 'pandomo',
+  title: sanitizeTitle(title),
+  description: address ? `Apartment at ${sanitizeAddress(address)}` : undefined,
+  address: sanitizeAddress(address || 'Groningen, Netherlands'),
+  property_type: 'apartment',
+  bedrooms: undefined,
+  bathrooms: undefined,
+  surface_area: undefined,
+  url: fullUrl,
+  image_urls: [],
+  features: [],
+  city: 'Groningen',
+  price,
+});
         if (properties.length >= 8) break;
       } catch { /* ignore */ }
     }
@@ -887,7 +914,7 @@ async function cleanupInvalidProperties(supabase: any, source: string) {
       const hasQuery = u.includes('?');
       const lower = path.toLowerCase();
       const badPath = lower.includes('/overzicht') || lower.includes('/aanbod') && path.split('/').filter(Boolean).length <= 3;
-      const badTitle = typeof p.title === 'string' && /overzicht|\?|filter/i.test(p.title);
+      const badTitle = typeof p.title === 'string' && /overzicht|\?|filter|page|sort/i.test(p.title);
       if (hasQuery || badPath || badTitle) {
         badIds.push(p.id);
       }
