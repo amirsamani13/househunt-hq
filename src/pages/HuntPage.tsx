@@ -19,7 +19,6 @@ export default function HuntPage() {
     minPrice: "",
     maxPrice: "",
     bedrooms: "",
-    bathrooms: "",
     propertyType: "Any",
     postalCodes: ""
   });
@@ -74,7 +73,6 @@ export default function HuntPage() {
         minPrice: "",
         maxPrice: "",
         bedrooms: "",
-        bathrooms: "",
         propertyType: "Any",
         postalCodes: ""
       });
@@ -241,17 +239,6 @@ export default function HuntPage() {
                   min="1"
                   value={formData.bedrooms}
                   onChange={(e) => handleInputChange("bedrooms", e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="bathrooms">Min Bathrooms</Label>
-                <Input 
-                  id="bathrooms" 
-                  type="number" 
-                  placeholder="1" 
-                  min="1"
-                  value={formData.bathrooms}
-                  onChange={(e) => handleInputChange("bathrooms", e.target.value)}
                 />
               </div>
               <div>
