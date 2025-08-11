@@ -46,14 +46,34 @@ function extractPrice(text: string): number | null {
 function sanitizeTitle(input: string): string {
   let t = (input || '').toString();
   t = t.replace(/&amp;/g, '&');
-  // Remove query/hash fragments if accidentally present in strings
+  
+  // AGGRESSIVE URL cleaning - remove everything after ? or # AND any URL-like patterns
   t = t.split('?')[0].split('#')[0];
+  t = t.replace(/[\?\&=\%].*$/g, ''); // Remove anything that looks like URL parameters
+  t = t.replace(/[A-Za-z]+=[A-Za-z0-9\%\-\+\&]+/g, ''); // Remove key=value patterns
+  
+  // Remove URL encoding artifacts
+  t = t.replace(/\%[0-9A-Fa-f]{2}/g, '');
+  t = t.replace(/forsaleorrent=\d+/gi, '');
+  t = t.replace(/localityid=\d+/gi, '');
+  t = t.replace(/locationofinterest=[^&\s]*/gi, '');
+  t = t.replace(/moveunavailablelistingstothebottom=[^&\s]*/gi, '');
+  t = t.replace(/orderby=\d+/gi, '');
+  t = t.replace(/take=\d+/gi, '');
+  t = t.replace(/filter[^&\s]*/gi, '');
+  t = t.replace(/group[^&\s]*/gi, '');
+  t = t.replace(/page=\d+/gi, '');
+  
   // Remove obvious non-title words
   t = t.replace(/\b(overzicht|aanbod|zoeken|filters?|page\s*\d+|sort\s*(?:newest|pricelow|pricehigh))\b/gi, '');
+  
   // Strip brand suffixes like " - Pandomo" or " | Funda"
-  t = t.replace(/\s*[\-|–—|•]\s*(pararius|kamernet|grunoverhuur|funda|campusgroningen|rotsvast|expatrentalsholland|vandermeulen|housinganywhere|dcwonen|huure|maxxhuren|kpmakelaars|househunting|woldringverhuur|050vastgoed)\s*$/i, '');
-  // Collapse spaces
+  t = t.replace(/\s*[\-|–—|•]\s*(pararius|kamernet|grunoverhuur|funda|campusgroningen|rotsvast|expatrentalsholland|vandermeulen|housinganywhere|dcwonen|huure|maxxhuren|kpmakelaars|househunting|woldringverhuur|050vastgoed|pandomo)\s*$/i, '');
+  
+  // Clean up messy characters and collapse spaces
+  t = t.replace(/[^\w\s\-\,\.]/g, ' '); // Keep only word chars, spaces, dashes, commas, dots
   t = t.replace(/\s{2,}/g, ' ').trim();
+  
   if (!t) t = 'Property in Groningen';
   if (t.length > 200) t = t.slice(0, 200);
   return t;
@@ -456,11 +476,11 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
       let pathname = '';
       try { pathname = new URL(fullUrl).pathname; } catch { pathname = fullUrl.split('?')[0]; }
       const segments = pathname.split('/').filter(Boolean);
-      const forbidden = new Set(['overzicht', 'huren-groningen', 'woningaanbod', 'aanbod', 'huur', 'zoeken']);
+      const forbidden = new Set(['overzicht', 'huren-groningen', 'woningaanbod', 'aanbod', 'huur', 'zoeken', 'search', 'results', 'listings', 'filter', 'page']);
       const isOverviewLike = segments.length <= 3 && segments.some(s => forbidden.has(s.toLowerCase()));
-      const hasQuery = fullUrl.includes('?');
+      const hasQuery = fullUrl.includes('?') || fullUrl.includes('&') || fullUrl.includes('=');
       if (isOverviewLike || hasQuery) {
-        // Skip likely non-detail pages to avoid wrong links
+        console.log(`Skipping overview/query URL: ${fullUrl}`);
         continue;
       }
 
@@ -529,7 +549,15 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
       const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).split('-').join(' '));
       const slug = meaningful.join(' ').trim();
 
-const finalTitle = sanitizeTitle(addressFromDetail || titleFromDetail || slug || `${typeDefault} in Groningen`);
+      // Extra validation: if the extracted title still contains URL artifacts, reject it
+      let candidateTitle = addressFromDetail || titleFromDetail || slug || `${typeDefault} in Groningen`;
+      if (candidateTitle.includes('?') || candidateTitle.includes('&') || candidateTitle.includes('=') || 
+          candidateTitle.includes('filter') || candidateTitle.includes('overzicht')) {
+        console.log(`Rejecting property with bad title: ${candidateTitle}`);
+        continue;
+      }
+      
+      const finalTitle = sanitizeTitle(candidateTitle);
 
 properties.push({
   external_id: `${source}:${fullUrl}`,
