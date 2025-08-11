@@ -70,6 +70,10 @@ function sanitizeTitle(input: string): string {
   // Strip brand suffixes like " - Pandomo" or " | Funda"
   t = t.replace(/\s*[\-|–—|•]\s*(pararius|kamernet|grunoverhuur|funda|campusgroningen|rotsvast|expatrentalsholland|vandermeulen|housinganywhere|dcwonen|huure|maxxhuren|kpmakelaars|househunting|woldringverhuur|050vastgoed|pandomo)\s*$/i, '');
   
+  // COMMAND 3: Remove alphanumeric strings like t38e404943 (8+ chars with both letters and numbers)
+  t = t.replace(/\b[a-zA-Z]*\d+[a-zA-Z0-9]*[a-zA-Z]+[a-zA-Z0-9]*\b/g, '');
+  t = t.replace(/\b\w*[a-zA-Z]+\d+\w*\b/g, '');
+  
   // Clean up messy characters and collapse spaces
   t = t.replace(/[^\w\s\-\,\.]/g, ' '); // Keep only word chars, spaces, dashes, commas, dots
   t = t.replace(/\s{2,}/g, ' ').trim();
@@ -455,6 +459,172 @@ const property: Property = {
   return properties;
 }
 
+// COMMAND 1: New helper function for extracting property details
+async function extractPropertyDetails(url: string, source: string, typeDefault: string): Promise<Property | null> {
+  try {
+    console.log(`Fetching individual property data for: ${url}`);
+    
+    const detailResp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+    if (!detailResp.ok) {
+      console.log(`Failed to fetch ${url}: ${detailResp.status}`);
+      return null;
+    }
+    
+    const detailHtml = await detailResp.text();
+    
+    // Initialize variables for this specific property
+    let titleFromDetail = '';
+    let addressFromDetail = '';
+    let priceFromDetail: number | null = null;
+    let bedroomsFromDetail: number | null = null;
+    let bathroomsFromDetail: number | null = null;
+    let surfaceFromDetail: number | null = null;
+    
+    // Try JSON-LD first for this specific property
+    const ldMatches = Array.from(detailHtml.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi));
+    for (const ldMatch of ldMatches) {
+      try {
+        const jsonData = JSON.parse(ldMatch[1]);
+        if (jsonData.name) titleFromDetail = jsonData.name;
+        if (jsonData.address?.streetAddress) addressFromDetail = jsonData.address.streetAddress;
+        if (jsonData.offers?.price) priceFromDetail = parseFloat(jsonData.offers.price);
+        if (jsonData.numberOfRooms) bedroomsFromDetail = parseInt(jsonData.numberOfRooms);
+        if (jsonData.floorSize?.value) surfaceFromDetail = parseFloat(jsonData.floorSize.value);
+      } catch (e) {
+        console.log(`JSON-LD parse error for ${url}:`, e);
+      }
+    }
+    
+    // Extract title from h1, h2, or title tag if not found in JSON-LD
+    if (!titleFromDetail) {
+      const h1 = detailHtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+      if (h1) titleFromDetail = extractText(h1[1]);
+    }
+    
+    // Extract address using multiple patterns
+    if (!addressFromDetail) {
+      const addrPatterns = [
+        /class=["'][^"']*(address|adres|street|location)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|h\d)>/i,
+        /<(?:div|span)[^>]*class=["'][^"']*street[^"']*["'][^>]*>(.*?)<\/(?:div|span)>/i,
+        /<(?:div|span)[^>]*class=["'][^"']*location[^"']*["'][^>]*>(.*?)<\/(?:div|span)>/i
+      ];
+      for (const pattern of addrPatterns) {
+        const match = detailHtml.match(pattern);
+        if (match) {
+          addressFromDetail = extractText(match[2] || match[1]);
+          break;
+        }
+      }
+    }
+    
+    // Extract price if not found
+    if (!priceFromDetail) {
+      const priceMatch = detailHtml.match(/(?:€|EUR)\s*([\d\.,]+)/i);
+      if (priceMatch) {
+        priceFromDetail = parseFloat(priceMatch[1].replace(/[.,]/g, ''));
+      }
+    }
+    
+    // Extract bedrooms with enhanced patterns
+    if (!bedroomsFromDetail) {
+      const bedroomPatterns = [
+        /(\d+)\s*(?:bed|slaap|kamer|room)/i,
+        /(?:bed|slaap|kamer|room)(?:room)?s?\s*[:=]?\s*(\d+)/i,
+        /(\d+)\s*(?:bed|slaap)room/i
+      ];
+      for (const pattern of bedroomPatterns) {
+        const match = detailHtml.match(pattern);
+        if (match) {
+          bedroomsFromDetail = parseInt(match[1]);
+          break;
+        }
+      }
+    }
+    
+    // Extract bathrooms with enhanced patterns  
+    if (!bathroomsFromDetail) {
+      const bathroomPatterns = [
+        /(\d+)\s*(?:bath|bad|toilet)/i,
+        /(?:bath|bad|toilet)(?:room)?s?\s*[:=]?\s*(\d+)/i,
+        /(\d+)\s*bathroom/i
+      ];
+      for (const pattern of bathroomPatterns) {
+        const match = detailHtml.match(pattern);
+        if (match) {
+          bathroomsFromDetail = parseInt(match[1]);
+          break;
+        }
+      }
+    }
+    
+    // Extract surface area with enhanced patterns
+    if (!surfaceFromDetail) {
+      const surfacePatterns = [
+        /(\d+(?:\.\d+)?)\s*m[²2]/i,
+        /(\d+(?:\.\d+)?)\s*(?:square|vierkante)\s*meter/i,
+        /(?:surface|oppervlakte|area)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*m/i
+      ];
+      for (const pattern of surfacePatterns) {
+        const match = detailHtml.match(pattern);
+        if (match) {
+          surfaceFromDetail = parseFloat(match[1]);
+          break;
+        }
+      }
+    }
+    
+    console.log(`Extracted data for ${url}: beds=${bedroomsFromDetail}, baths=${bathroomsFromDetail}, surface=${surfaceFromDetail}m²`);
+    
+    // Build clean title from URL segments if needed
+    const segments = url.replace(/https?:\/\/[^\/]+\//, '').split('/').filter(s => s.length > 2);
+    const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).split('-').join(' '));
+    const slug = meaningful.join(' ').trim();
+    
+    // Clean up extracted title/address and create final title
+    let cleanTitle = titleFromDetail || addressFromDetail || '';
+    let cleanAddress = addressFromDetail || '';
+    
+    // Remove URL artifacts and unwanted characters from title
+    cleanTitle = cleanTitle.replace(/[?&=]/g, '').replace(/\b(filter|overzicht|huren|groningen)\b/gi, '').trim();
+    cleanAddress = cleanAddress.replace(/[?&=]/g, '').trim();
+    
+    // Build final title - prefer clean address, fallback to extracted title, then slug
+    let candidateTitle = cleanAddress || cleanTitle || slug || `${typeDefault} in Groningen`;
+    
+    // Extra validation: reject if still contains artifacts or random IDs
+    if (candidateTitle.includes('?') || candidateTitle.includes('&') || candidateTitle.includes('=') || 
+        candidateTitle.includes('filter') || candidateTitle.includes('overzicht') ||
+        /\b[a-z0-9]{8,}\b/i.test(candidateTitle)) {
+      console.log(`Rejecting property with bad title: ${candidateTitle}`);
+      return null;
+    }
+    
+    // Create property object
+    const property: Property = {
+      external_id: `${source}:${url}`,
+      source,
+      title: sanitizeTitle(candidateTitle),
+      description: `Rental ${typeDefault} in Groningen`,
+      price: priceFromDetail,
+      address: sanitizeAddress(cleanAddress || 'Groningen, Netherlands'),
+      property_type: typeDefault,
+      bedrooms: bedroomsFromDetail || 1,
+      bathrooms: bathroomsFromDetail || 1,
+      surface_area: surfaceFromDetail || 60,
+      url,
+      image_urls: [],
+      features: [],
+      city: 'Groningen'
+    };
+    
+    return property;
+    
+  } catch (error) {
+    console.log(`Error extracting property details for ${url}:`, error);
+    return null;
+  }
+}
+
 // Generic scraper helper for rental listings
 async function scrapeGeneric(opts: { url: string; source: string; domain?: string; linkPattern: RegExp; typeDefault: string; max?: number }): Promise<Property[]> {
   const { url, source, domain, linkPattern, typeDefault, max = 5 } = opts;
@@ -466,190 +636,21 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
     const html = await resp.text();
     const matches = Array.from(html.matchAll(linkPattern));
     const seen = new Set<string>();
+    
+    // COMMAND 2: Simplified loop - only call helper and add results
     for (let i = 0; i < matches.length && properties.length < max; i++) {
       const href = matches[i][1];
       if (!href) continue;
       const fullUrl = href.startsWith('http') ? href : `${domain ?? new URL(url).origin}${href}`;
       if (seen.has(fullUrl)) continue; seen.add(fullUrl);
 
-      // Build clean pathname without query/hash and skip obvious category/overview URLs
-      let pathname = '';
-      try { pathname = new URL(fullUrl).pathname; } catch { pathname = fullUrl.split('?')[0]; }
-      const segments = pathname.split('/').filter(Boolean);
-      const forbidden = new Set(['overzicht', 'huren-groningen', 'woningaanbod', 'aanbod', 'huur', 'zoeken', 'search', 'results', 'listings', 'filter', 'page']);
-      const isOverviewLike = segments.length <= 3 && segments.some(s => forbidden.has(s.toLowerCase()));
-      const hasQuery = fullUrl.includes('?') || fullUrl.includes('&') || fullUrl.includes('=');
-      if (isOverviewLike || hasQuery) {
-        console.log(`Skipping overview/query URL: ${fullUrl}`);
-        continue;
+      // Call the new helper function for each URL
+      const propertyObject = await extractPropertyDetails(fullUrl, source, typeDefault);
+      
+      // Check the result and add it to the array
+      if (propertyObject) {
+        properties.push(propertyObject);
       }
-
-      console.log(`Fetching individual property data for: ${fullUrl}`);
-      
-      // CRITICAL: Initialize FRESH variables for each property to prevent data mixing
-      let titleFromDetail = '';
-      let addressFromDetail = '';
-      let priceFromDetail: number | null = null;
-      let bedroomsFromDetail: number | null = null;
-      let bathroomsFromDetail: number | null = null;
-      let surfaceFromDetail: number | null = null;
-      
-      try {
-        const detailResp = await fetch(fullUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
-        if (detailResp.ok) {
-          const detailHtml = await detailResp.text();
-
-          // Try JSON-LD first for this specific property
-          const ldMatches = Array.from(detailHtml.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi));
-          for (const m of ldMatches) {
-            try {
-              const json = JSON.parse(m[1]);
-              const nodes = Array.isArray(json) ? json : [json];
-              for (const node of nodes) {
-                if (typeof node === 'object') {
-                  if (!titleFromDetail && (node.name || node.headline)) titleFromDetail = String(node.name || node.headline);
-                  if (!addressFromDetail && node.address && (node.address.streetAddress || node.address.addressLocality)) {
-                    const street = node.address.streetAddress || '';
-                    const city = node.address.addressLocality || '';
-                    addressFromDetail = [street, city].filter(Boolean).join(', ');
-                  }
-                  if (!priceFromDetail && (node.offers?.price || node.price)) {
-                    priceFromDetail = Number(node.offers?.price || node.price) || null;
-                  }
-                  if (!bedroomsFromDetail && node.numberOfRooms) {
-                    bedroomsFromDetail = Number(node.numberOfRooms) || null;
-                  }
-                }
-              }
-            } catch (_) { /* ignore JSON errors */ }
-          }
-
-          // Enhanced extraction patterns for this specific property
-          if (!titleFromDetail) {
-            const og = detailHtml.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i);
-            if (og) titleFromDetail = og[1];
-          }
-          if (!titleFromDetail) {
-            const h1 = detailHtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-            if (h1) titleFromDetail = extractText(h1[1]);
-          }
-          if (!addressFromDetail) {
-            // Multiple address patterns
-            const addrPatterns = [
-              /class=["'][^"']*(address|adres|street|location)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|h\d)>/i,
-              /<(?:div|span)[^>]*class=["'][^"']*street[^"']*["'][^>]*>(.*?)<\/(?:div|span)>/i,
-              /<(?:div|span)[^>]*class=["'][^"']*location[^"']*["'][^>]*>(.*?)<\/(?:div|span)>/i
-            ];
-            for (const pattern of addrPatterns) {
-              const match = detailHtml.match(pattern);
-              if (match) {
-                addressFromDetail = extractText(match[2] || match[1]);
-                break;
-              }
-            }
-          }
-          if (!priceFromDetail) {
-            const priceMatch = detailHtml.match(/(?:€|EUR)\s*([\d\.,]+)/i);
-            if (priceMatch) priceFromDetail = parseInt(priceMatch[1].replace(/[.,]/g, ''));
-          }
-          
-          // More specific bedroom extraction for this property
-          if (!bedroomsFromDetail) {
-            const bedPatterns = [
-              /(\d+)\s*(?:bed(?:room)?s?|slaapkamers?)/i,
-              /(?:bed(?:room)?s?|slaapkamers?)\s*[:\-]?\s*(\d+)/i,
-              /(\d+)\s*room/i,
-              /room.*?(\d+)/i
-            ];
-            for (const pattern of bedPatterns) {
-              const match = detailHtml.match(pattern);
-              if (match) {
-                bedroomsFromDetail = parseInt(match[1]);
-                break;
-              }
-            }
-          }
-          
-          // Bathroom extraction for this property
-          if (!bathroomsFromDetail) {
-            const bathPatterns = [
-              /(\d+)\s*(?:bath(?:room)?s?|badkamers?)/i,
-              /(?:bath(?:room)?s?|badkamers?)\s*[:\-]?\s*(\d+)/i
-            ];
-            for (const pattern of bathPatterns) {
-              const match = detailHtml.match(pattern);
-              if (match) {
-                bathroomsFromDetail = parseInt(match[1]);
-                break;
-              }
-            }
-          }
-          
-          // Surface area extraction for this property
-          if (!surfaceFromDetail) {
-            const surfPatterns = [
-              /(\d+)\s*m(?:²|2)/i,
-              /(\d+)\s*square\s*m/i,
-              /size[:\-]?\s*(\d+)/i
-            ];
-            for (const pattern of surfPatterns) {
-              const match = detailHtml.match(pattern);
-              if (match) {
-                surfaceFromDetail = parseInt(match[1]);
-                break;
-              }
-            }
-          }
-          
-          console.log(`Extracted data for ${fullUrl}: beds=${bedroomsFromDetail}, baths=${bathroomsFromDetail}, surface=${surfaceFromDetail}m²`);
-        }
-      } catch (err) { 
-        console.error(`Error fetching detail for ${fullUrl}:`, err);
-      }
-
-      // Create a readable slug from the last meaningful segments as final fallback
-      const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).split('-').join(' '));
-      const slug = meaningful.join(' ').trim();
-
-      // Clean up extracted title/address and create final title
-      let cleanTitle = titleFromDetail || addressFromDetail || '';
-      let cleanAddress = addressFromDetail || '';
-      
-      // Remove URL artifacts and unwanted characters from title
-      cleanTitle = cleanTitle.replace(/[?&=]/g, '').replace(/\b(filter|overzicht|huren|groningen)\b/gi, '').trim();
-      cleanAddress = cleanAddress.replace(/[?&=]/g, '').trim();
-      
-      // Build final title - prefer clean address, fallback to extracted title, then slug
-      let candidateTitle = cleanAddress || cleanTitle || slug || `${typeDefault} in Groningen`;
-      
-      // Extra validation: reject if still contains artifacts
-      if (candidateTitle.includes('?') || candidateTitle.includes('&') || candidateTitle.includes('=') || 
-          candidateTitle.includes('filter') || candidateTitle.includes('overzicht') ||
-          /\b[a-z0-9]{8,}\b/i.test(candidateTitle)) { // reject random IDs like t38e404944
-        console.log(`Rejecting property with bad title: ${candidateTitle}`);
-        continue;
-      }
-      
-      const finalTitle = sanitizeTitle(candidateTitle);
-
-      // Create property with UNIQUE data extracted for THIS specific property
-      properties.push({
-        external_id: `${source}:${fullUrl}`,
-        source,
-        title: finalTitle,
-        description: addressFromDetail ? `Rental ${typeDefault} at ${sanitizeAddress(addressFromDetail)}` : undefined,
-        address: sanitizeAddress(addressFromDetail || 'Groningen, Netherlands'),
-        postal_code: null,
-        property_type: typeDefault,
-        bedrooms: bedroomsFromDetail ?? undefined,
-        bathrooms: bathroomsFromDetail ?? undefined,
-        surface_area: surfaceFromDetail ?? undefined,
-        url: fullUrl,
-        image_urls: [],
-        features: [],
-        city: 'Groningen',
-        price: priceFromDetail ?? undefined,
-      });
     }
   } catch (e) {
     console.error(`Error scraping ${source}:`, e);
@@ -695,7 +696,8 @@ async function scrapeCampusGroningen(): Promise<Property[]> {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const html = await resp.text();
 
-    const linkRe = /href=["'](\/huren-groningen\/[a-z0-9\-\/]+)["']/gi;
+    // COMMAND 4: Fix the regular expression to only match /woning/ URLs
+    const linkRe = /href=["'](\/woning\/[a-z0-9\-\/]+)["']/gi;
     const seen = new Set<string>();
     const matches = Array.from(html.matchAll(linkRe));
     for (const m of matches) {
@@ -705,7 +707,9 @@ async function scrapeCampusGroningen(): Promise<Property[]> {
       if (fullUrl.includes('?')) continue;
       const path = new URL(fullUrl).pathname;
       const segs = path.split('/').filter(Boolean);
-      if (segs.length < 3 || segs.some(s => ['huren-groningen'].includes(s))) continue;
+      
+      // Only accept URLs that contain /woning/ path and are long enough
+      if (!path.includes('/woning/') || segs.length < 3) continue;
 
       try {
         const d = await fetch(fullUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
