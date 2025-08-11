@@ -502,25 +502,25 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
       const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).split('-').join(' '));
       const slug = meaningful.join(' ').trim();
 
-      const finalTitle = (addressFromDetail || titleFromDetail || slug || `${typeDefault} in Groningen`).trim().slice(0, 200);
+const finalTitle = (addressFromDetail || titleFromDetail || slug || `${typeDefault} in Groningen`).trim().slice(0, 200);
 
-      properties.push({
-        external_id: `${source}:${fullUrl}`,
-        source,
-        title: finalTitle,
-        description: `Rental ${typeDefault} ${addressFromDetail ? 'at ' + addressFromDetail : 'in Groningen'}`,
-        address: addressFromDetail || 'Groningen, Netherlands',
-        postal_code: null,
-        property_type: typeDefault,
-        bedrooms: bedroomsFromDetail ?? (typeDefault === 'room' ? 1 : 2),
-        bathrooms: 1,
-        surface_area: surfaceFromDetail ?? (typeDefault === 'room' ? 16 : 60),
-        url: fullUrl,
-        image_urls: [],
-        features: [],
-        city: 'Groningen',
-        price: priceFromDetail ?? undefined,
-      });
+properties.push({
+  external_id: `${source}:${fullUrl}`,
+  source,
+  title: finalTitle,
+  description: addressFromDetail ? `Rental ${typeDefault} at ${addressFromDetail}` : undefined,
+  address: addressFromDetail || 'Groningen, Netherlands',
+  postal_code: null,
+  property_type: typeDefault,
+  bedrooms: bedroomsFromDetail ?? undefined,
+  bathrooms: undefined,
+  surface_area: surfaceFromDetail ?? undefined,
+  url: fullUrl,
+  image_urls: [],
+  features: [],
+  city: 'Groningen',
+  price: priceFromDetail ?? undefined,
+});
     }
   } catch (e) {
     console.error(`Error scraping ${source}:`, e);
@@ -558,13 +558,66 @@ async function scrapeFunda(): Promise<Property[]> {
 }
 
 async function scrapeCampusGroningen(): Promise<Property[]> {
-  return scrapeGeneric({
-    url: 'https://www.campusgroningen.com/huren-groningen',
-    source: 'campusgroningen',
-    domain: 'https://www.campusgroningen.com',
-    linkPattern: /href=\"(\/huren-groningen\/[^"]+\/[^"]+)\"/g,
-    typeDefault: 'room'
-  });
+  console.log("Starting CampusGroningen scraping...");
+  const properties: Property[] = [];
+  try {
+    const url = 'https://www.campusgroningen.com/huren-groningen';
+    const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const html = await resp.text();
+
+    const linkRe = /href=["'](\/huren-groningen\/[a-z0-9\-\/]+)["']/gi;
+    const seen = new Set<string>();
+    const matches = Array.from(html.matchAll(linkRe));
+    for (const m of matches) {
+      const href = m[1];
+      const fullUrl = `https://www.campusgroningen.com${href}`;
+      if (seen.has(fullUrl)) continue; seen.add(fullUrl);
+      if (fullUrl.includes('?')) continue;
+      const path = new URL(fullUrl).pathname;
+      const segs = path.split('/').filter(Boolean);
+      if (segs.length < 3 || segs.some(s => ['huren-groningen'].includes(s))) continue;
+
+      try {
+        const d = await fetch(fullUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+        if (!d.ok) continue;
+        const dh = await d.text();
+        let title = '';
+        const og = dh.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i);
+        if (og) title = og[1];
+        if (!title) {
+          const h1 = dh.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+          if (h1) title = extractText(h1[1]);
+        }
+        const addrMatch = dh.match(/class=["'][^"']*(address|adres|street|location)[^"']*["'][^>]*>([\s\S]*?)<\//i);
+        const address = addrMatch ? extractText(addrMatch[2]) : undefined;
+        const priceMatch = dh.match(/(?:€|EUR)\s*([\d\.,]+)/i);
+        const price = priceMatch ? parseInt(priceMatch[1].replace(/[.,]/g, '')) : undefined;
+        if (!title || /overzicht|huren\s*groningen/i.test(title)) continue;
+
+        properties.push({
+          external_id: `campusgroningen:${fullUrl}`,
+          source: 'campusgroningen',
+          title: title.slice(0, 200),
+          description: address ? `Room at ${address}` : undefined,
+          address: address || 'Groningen, Netherlands',
+          property_type: 'room',
+          bedrooms: undefined,
+          bathrooms: undefined,
+          surface_area: undefined,
+          url: fullUrl,
+          image_urls: [],
+          features: [],
+          city: 'Groningen',
+          price,
+        });
+        if (properties.length >= 5) break;
+      } catch { /* ignore */ }
+    }
+  } catch (e) {
+    console.error('CampusGroningen scrape failed:', e);
+  }
+  return properties;
 }
 
 async function scrapeRotsvast(): Promise<Property[]> {
@@ -678,13 +731,67 @@ async function scrape050Vastgoed(): Promise<Property[]> {
 }
 
 async function scrapePandomo(): Promise<Property[]> {
-  return scrapeGeneric({
-    url: 'https://www.pandomo.nl/overzicht/?filter-group-id=1&filter%5B66%5D=GRONINGEN',
-    source: 'pandomo',
-    domain: 'https://www.pandomo.nl',
-    linkPattern: /href=\"(\/(?:aanbod|woning|objecten|huur)\/[^\"#]+)\"/g,
-    typeDefault: 'apartment'
-  });
+  console.log('Starting Pandomo scraping...');
+  const properties: Property[] = [];
+  try {
+    const listUrl = 'https://www.pandomo.nl/overzicht/?filter-group-id=1&filter%5B66%5D=GRONINGEN';
+    const resp = await fetch(listUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const html = await resp.text();
+
+    // Capture detail-page links; exclude overview and query links
+    const linkRe = /href=["'](\/(?:aanbod|objecten|woning)[^"'#?]+)["']/gi;
+    const seen = new Set<string>();
+    const matches = Array.from(html.matchAll(linkRe));
+    for (const m of matches) {
+      const href = m[1];
+      const fullUrl = `https://www.pandomo.nl${href}`;
+      if (seen.has(fullUrl)) continue; seen.add(fullUrl);
+      const path = new URL(fullUrl).pathname;
+      const segs = path.split('/').filter(Boolean);
+      if (segs.includes('overzicht') || segs.length < 3) continue;
+
+      // Fetch detail page to extract real data
+      try {
+        const d = await fetch(fullUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+        if (!d.ok) continue;
+        const dh = await d.text();
+        let title = '';
+        const og = dh.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i);
+        if (og) title = og[1];
+        if (!title) {
+          const h1 = dh.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+          if (h1) title = extractText(h1[1]);
+        }
+        const addrMatch = dh.match(/class=["'][^"']*(address|adres|street|location)[^"']*["'][^>]*>([\s\S]*?)<\//i);
+        const address = addrMatch ? extractText(addrMatch[2]) : undefined;
+        const priceMatch = dh.match(/(?:€|EUR)\s*([\d\.,]+)/i);
+        const price = priceMatch ? parseInt(priceMatch[1].replace(/[.,]/g, '')) : undefined;
+        if (!title || /overzicht/i.test(title)) continue;
+
+        properties.push({
+          external_id: `pandomo:${fullUrl}`,
+          source: 'pandomo',
+          title: title.slice(0, 200),
+          description: address ? `Apartment at ${address}` : undefined,
+          address: address || 'Groningen, Netherlands',
+          property_type: 'apartment',
+          bedrooms: undefined,
+          bathrooms: undefined,
+          surface_area: undefined,
+          url: fullUrl,
+          image_urls: [],
+          features: [],
+          city: 'Groningen',
+          price,
+        });
+        if (properties.length >= 8) break;
+      } catch { /* ignore */ }
+    }
+  } catch (e) {
+    console.error('Pandomo scrape failed:', e);
+  }
+  return properties;
 }
 
 async function saveProperties(supabase: any, properties: Property[], source: string) {
@@ -759,6 +866,44 @@ async function deactivateBrokenLinks(supabase: any, source: string, limit = 100)
     console.error('Unexpected error during link deactivation:', e);
   }
 }
+
+// Clean up obviously invalid records (overview/query URLs or titles)
+async function cleanupInvalidProperties(supabase: any, source: string) {
+  try {
+    const { data, error } = await supabase
+      .from('properties')
+      .select('id, url, title')
+      .eq('source', source)
+      .eq('is_active', true)
+      .order('first_seen_at', { ascending: false })
+      .limit(200);
+    if (error) return;
+
+    const badIds: string[] = [];
+    for (const p of data || []) {
+      if (!p.url) continue;
+      const u = p.url as string;
+      const path = u.split('?')[0];
+      const hasQuery = u.includes('?');
+      const lower = path.toLowerCase();
+      const badPath = lower.includes('/overzicht') || lower.includes('/aanbod') && path.split('/').filter(Boolean).length <= 3;
+      const badTitle = typeof p.title === 'string' && /overzicht|\?|filter/i.test(p.title);
+      if (hasQuery || badPath || badTitle) {
+        badIds.push(p.id);
+      }
+    }
+    if (badIds.length > 0) {
+      console.log(`Cleaning up ${badIds.length} invalid ${source} records`);
+      await supabase
+        .from('properties')
+        .update({ is_active: false, last_updated_at: new Date().toISOString() })
+        .in('id', badIds);
+    }
+  } catch (e) {
+    console.error('cleanupInvalidProperties error', e);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -852,11 +997,14 @@ serve(async (req) => {
             break;
         }
 
-        const newCount = await saveProperties(supabase, properties, source);
-        if (source === 'kamernet') {
-          await deactivateBrokenLinks(supabase, 'kamernet', 100);
-        }
-        totalNewProperties += newCount;
+const newCount = await saveProperties(supabase, properties, source);
+if (source === 'kamernet') {
+  await deactivateBrokenLinks(supabase, 'kamernet', 100);
+}
+if (source === 'pandomo' || source === 'campusgroningen') {
+  await cleanupInvalidProperties(supabase, source);
+}
+totalNewProperties += newCount;
         
         // Update log with success
         await supabase

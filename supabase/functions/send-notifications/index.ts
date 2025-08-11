@@ -310,8 +310,14 @@ const testAll: boolean = Boolean(body?.testAll) || body?.test === 'all';
       throw propertiesError;
     }
 
-    console.log(`Found ${newProperties?.length || 0} new properties from the last ${hours} hours`);
+    const safeProperties = (newProperties || []).filter((p: any) => {
+      const u = String(p.url || '');
+      const title = String(p.title || '');
+      const path = u.split('?')[0].toLowerCase();
+      return u && !u.includes('?') && !path.includes('/overzicht') && !/overzicht|\?|filter/i.test(title);
+    });
 
+    console.log(`Found ${safeProperties.length} valid properties from the last ${hours} hours (filtered from ${newProperties?.length || 0})`);
     let notificationsSent = 0;
 
     // Process each alert against new properties
@@ -330,7 +336,7 @@ const testAll: boolean = Boolean(body?.testAll) || body?.test === 'all';
 
       let sentForAlert = 0;
       let skipped404 = 0;
-      for (const property of newProperties || []) {
+      for (const property of safeProperties) {
         // Validate listing URL before sending
         try {
           const { ok, status } = await checkUrlAvailable(property.url);
