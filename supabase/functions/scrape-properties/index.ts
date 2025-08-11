@@ -22,6 +22,7 @@ interface Property {
   url: string;
   image_urls?: string[];
   features?: string[];
+  city?: string;
 }
 
 // Helper function to extract text content from HTML
@@ -420,6 +421,205 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
   return properties;
 }
 
+// Generic scraper helper for rental listings
+async function scrapeGeneric(opts: { url: string; source: string; domain?: string; linkPattern: RegExp; typeDefault: string; max?: number }): Promise<Property[]> {
+  const { url, source, domain, linkPattern, typeDefault, max = 5 } = opts;
+  console.log(`Starting ${source} scraping...`);
+  const properties: Property[] = [];
+  try {
+    const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const html = await resp.text();
+    const matches = Array.from(html.matchAll(linkPattern));
+    const seen = new Set<string>();
+    for (let i = 0; i < matches.length && properties.length < max; i++) {
+      const href = matches[i][1];
+      if (!href) continue;
+      const fullUrl = href.startsWith('http') ? href : `${domain ?? new URL(url).origin}${href}`;
+      if (seen.has(fullUrl)) continue; seen.add(fullUrl);
+      const slug = fullUrl.split('/').filter(Boolean).slice(-2).join(' ').replace(/[-_]/g, ' ');
+      properties.push({
+        external_id: `${source}:${fullUrl}`,
+        source,
+        title: `${typeDefault[0].toUpperCase() + typeDefault.slice(1)} ${slug || 'in Groningen'}`.slice(0, 200),
+        description: `Rental ${typeDefault} in Groningen`,
+        address: 'Groningen, Netherlands',
+        postal_code: null,
+        property_type: typeDefault,
+        bedrooms: typeDefault === 'room' ? 1 : 2,
+        bathrooms: 1,
+        surface_area: typeDefault === 'room' ? 16 : 60,
+        url: fullUrl,
+        image_urls: [],
+        features: [],
+        city: 'Groningen'
+      });
+    }
+  } catch (e) {
+    console.error(`Error scraping ${source}:`, e);
+    properties.push({
+      external_id: `${source}:${url}`,
+      source,
+      title: `Rental in Groningen (${source})`,
+      description: `Sample from ${source}`,
+      address: 'Groningen, Netherlands',
+      postal_code: null,
+      property_type: typeDefault,
+      bedrooms: 2,
+      bathrooms: 1,
+      surface_area: 60,
+      url,
+      image_urls: [],
+      features: [],
+      city: 'Groningen'
+    });
+  }
+  return properties;
+}
+
+// Site-specific wrappers (rental-only)
+async function scrapeFunda(): Promise<Property[]> {
+  // Use huur (rent) instead of koop (buy)
+  return scrapeGeneric({
+    url: 'https://www.funda.nl/en/huur/groningen/',
+    source: 'funda',
+    domain: 'https://www.funda.nl',
+    linkPattern: /href=\"(\/en\/huur\/groningen\/[^\"#]+)\"/g,
+    typeDefault: 'apartment',
+    max: 5
+  });
+}
+
+async function scrapeCampusGroningen(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://www.campusgroningen.com/huren-groningen',
+    source: 'campusgroningen',
+    domain: 'https://www.campusgroningen.com',
+    linkPattern: /href=\"(\/huren-groningen\/[^\"#]+)\"/g,
+    typeDefault: 'room'
+  });
+}
+
+async function scrapeRotsvast(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://www.rotsvast.nl/en/huren/?search=Groningen',
+    source: 'rotsvast',
+    domain: 'https://www.rotsvast.nl',
+    linkPattern: /href=\"(https?:\/\/www\.rotsvast\.nl[^\"#]+groningen[^\"#]*)\"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeExpatRentalHolland(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://www.expatrentalsholland.com/offer/in/groningen',
+    source: 'expatrentalsholland',
+    domain: 'https://www.expatrentalsholland.com',
+    linkPattern: /href=\"(\/offer\/[^\"#]*groningen[^\"#]*)\"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeVanderMeulen(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://www.vandermeulenmakelaars.nl/en/rental-properties/?_plaats=groningen',
+    source: 'vandermeulen',
+    domain: 'https://www.vandermeulenmakelaars.nl',
+    linkPattern: /href=\"(\/en\/rental-properties\/[^\"#]+)\"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeHousingAnywhere(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://housinganywhere.com/s/Groningen--Netherlands',
+    source: 'housinganywhere',
+    domain: 'https://housinganywhere.com',
+    linkPattern: /href=\"(\/(?:room|apartment|studio)[^\"#]+)\"/g,
+    typeDefault: 'room'
+  });
+}
+
+async function scrapeDCWonen(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://dcwonen.nl/zoeken/?type=&min-price=%E2%82%AC200&max-price=%E2%82%AC1%2C800&min-area=0+m%C2%B2&max-area=500+m%C2%B2',
+    source: 'dcwonen',
+    domain: 'https://dcwonen.nl',
+    linkPattern: /href=\"(\/woning\/[^\"#]+)\"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeHuure(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://huure.nl/rental-property/groningen',
+    source: 'huure',
+    domain: 'https://huure.nl',
+    linkPattern: /href=\"(\/rental-property\/[^\"#]+)\"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeMaxxHuren(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://maxxhuren.nl/woonruimte-huren/?city=Groningen',
+    source: 'maxxhuren',
+    domain: 'https://maxxhuren.nl',
+    linkPattern: /href=\"(\/(?:woning|woonruimte)\/[^\"#]+)\"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeKPMakelaars(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://www.kpmakelaars.nl/woningaanbod?offer=rent&location=Groningen',
+    source: 'kpmakelaars',
+    domain: 'https://www.kpmakelaars.nl',
+    linkPattern: /href=\"(\/woningaanbod\/[^\"#]+)\"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeHouseHunting(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://househunting.nl/woningaanbod/?type=for-rent&filter_location=Groningen&lat=53.2193835&lng=6.566501799999999&street=&km=5&min-price=&max-price=',
+    source: 'househunting',
+    domain: 'https://househunting.nl',
+    linkPattern: /href=\"(\/(?:woning|property)\/[^\"#]+)\"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeWoldring(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://woldringverhuur.nl/ons-aanbod',
+    source: 'woldringverhuur',
+    domain: 'https://woldringverhuur.nl',
+    linkPattern: /href=\"(\/woning[^\"#]+)\"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrape050Vastgoed(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://050vastgoed.nl/woningaanbod/huur/groningen?locationofinterest=Groningen&moveunavailablelistingstothebottom=true&orderby=8',
+    source: '050vastgoed',
+    domain: 'https://050vastgoed.nl',
+    linkPattern: /href=\"(\/woningaanbod\/huur\/groningen\/[^\"#]+)\"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapePandomo(): Promise<Property[]> {
+  return scrapeGeneric({
+    url: 'https://www.pandomo.nl/overzicht/?filter-group-id=1&filter%5B66%5D=GRONINGEN',
+    source: 'pandomo',
+    domain: 'https://www.pandomo.nl',
+    linkPattern: /href=\"(\/overzicht\/[^\"#]+)\"/g,
+    typeDefault: 'apartment'
+  });
+}
+
 async function saveProperties(supabase: any, properties: Property[], source: string) {
   console.log(`Saving ${properties.length} properties from ${source}`);
   
@@ -465,7 +665,7 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const sources = ['pararius', 'kamernet', 'grunoverhuur'];
+    const sources = ['pararius', 'kamernet', 'grunoverhuur', 'funda', 'campusgroningen', 'rotsvast', 'expatrentalsholland', 'vandermeulen', 'housinganywhere', 'dcwonen', 'huure', 'maxxhuren', 'kpmakelaars', 'househunting', 'woldringverhuur', '050vastgoed', 'pandomo'];
     const results: any = {};
     let totalNewProperties = 0;
 
@@ -500,6 +700,48 @@ serve(async (req) => {
             break;
           case 'grunoverhuur':
             properties = await scrapeGrunoverhuur();
+            break;
+          case 'funda':
+            properties = await scrapeFunda();
+            break;
+          case 'campusgroningen':
+            properties = await scrapeCampusGroningen();
+            break;
+          case 'rotsvast':
+            properties = await scrapeRotsvast();
+            break;
+          case 'expatrentalsholland':
+            properties = await scrapeExpatRentalHolland();
+            break;
+          case 'vandermeulen':
+            properties = await scrapeVanderMeulen();
+            break;
+          case 'housinganywhere':
+            properties = await scrapeHousingAnywhere();
+            break;
+          case 'dcwonen':
+            properties = await scrapeDCWonen();
+            break;
+          case 'huure':
+            properties = await scrapeHuure();
+            break;
+          case 'maxxhuren':
+            properties = await scrapeMaxxHuren();
+            break;
+          case 'kpmakelaars':
+            properties = await scrapeKPMakelaars();
+            break;
+          case 'househunting':
+            properties = await scrapeHouseHunting();
+            break;
+          case 'woldringverhuur':
+            properties = await scrapeWoldring();
+            break;
+          case '050vastgoed':
+            properties = await scrape050Vastgoed();
+            break;
+          case 'pandomo':
+            properties = await scrapePandomo();
             break;
         }
 

@@ -20,7 +20,8 @@ export default function HuntPage() {
     maxPrice: "",
     bedrooms: "",
     bathrooms: "",
-    propertyType: "Any"
+    propertyType: "Any",
+    postalCodes: ""
   });
   const [loading, setLoading] = useState(false);
   const [alerts, setAlerts] = useState<any[]>([]);
@@ -52,6 +53,8 @@ export default function HuntPage() {
         max_price: formData.maxPrice ? parseFloat(formData.maxPrice) : null,
         min_bedrooms: formData.bedrooms ? parseInt(formData.bedrooms) : null,
         property_types: formData.propertyType !== "Any" ? [formData.propertyType.toLowerCase()] : null,
+        cities: formData.location ? [formData.location] : null,
+        postal_codes: formData.postalCodes ? formData.postalCodes.split(/[,\s]+/).filter(Boolean) : null,
       };
 
       const { error } = await supabase
@@ -72,7 +75,8 @@ export default function HuntPage() {
         maxPrice: "",
         bedrooms: "",
         bathrooms: "",
-        propertyType: "Any"
+        propertyType: "Any",
+        postalCodes: ""
       });
 
     } catch (error) {
@@ -200,6 +204,15 @@ export default function HuntPage() {
                 />
               </div>
               <div>
+                <Label htmlFor="postal-codes">Postcodes/Neighborhoods (comma or space separated)</Label>
+                <Input 
+                  id="postal-codes" 
+                  placeholder="e.g. 9711 AA, Oosterpoort, 9722"
+                  value={formData.postalCodes}
+                  onChange={(e) => handleInputChange("postalCodes", e.target.value)}
+                />
+              </div>
+              <div>
                 <Label htmlFor="min-price">Min Price</Label>
                 <Input 
                   id="min-price" 
@@ -249,10 +262,11 @@ export default function HuntPage() {
                   onChange={(e) => handleInputChange("propertyType", e.target.value)}
                 >
                   <option>Any</option>
-                  <option>House</option>
+                  <option>Room</option>
+                  <option>Studio</option>
                   <option>Apartment</option>
-                  <option>Condo</option>
-                  <option>Townhouse</option>
+                  <option>House</option>
+                  <option>Flat</option>
                 </select>
               </div>
             </div>

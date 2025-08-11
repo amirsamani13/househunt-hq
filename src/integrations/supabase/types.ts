@@ -265,6 +265,7 @@ export type Database = {
       }
       user_alerts: {
         Row: {
+          cities: string[] | null
           created_at: string
           id: string
           is_active: boolean | null
@@ -281,6 +282,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          cities?: string[] | null
           created_at?: string
           id?: string
           is_active?: boolean | null
@@ -297,6 +299,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          cities?: string[] | null
           created_at?: string
           id?: string
           is_active?: boolean | null
