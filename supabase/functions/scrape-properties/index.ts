@@ -191,6 +191,21 @@ function extractFeatures(html: string): string[] {
   return features;
 }
 
+// Helper to verify a listing URL is reachable (avoid broken links)
+async function isUrlReachable(url: string): Promise<boolean> {
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml'
+      }
+    });
+    return resp.ok; // true for 2xx
+  } catch (_) {
+    return false;
+  }
+}
+
 async function scrapeKamernet(): Promise<Property[]> {
   console.log("Starting Kamernet scraping...");
   const properties: Property[] = [];
@@ -209,94 +224,52 @@ async function scrapeKamernet(): Promise<Property[]> {
     const html = await response.text();
     console.log("Kamernet HTML fetched, length:", html.length);
     
-    // Extract actual property URLs from the listing page
-    const urlPattern = /href="(\/en\/for-rent\/(?:room|studio|apartment)-groningen\/[a-zA-Z0-9\-]+\/[a-zA-Z0-9\-]+\d+)"/g;
+    // Extract listing URLs with numeric IDs in the slug
+    const urlPattern = /href="(\/en\/for-rent\/(?:room|studio|apartment)-groningen\/[a-zA-Z0-9\-]+\/(?:room|studio|apartment)-\d+)"/g;
     const urlMatches = Array.from(html.matchAll(urlPattern));
     console.log("Found Kamernet property URLs:", urlMatches.length);
     
-    if (urlMatches.length > 0) {
-      for (let i = 0; i < Math.min(urlMatches.length, 5); i++) {
-        const relativeUrl = urlMatches[i][1];
-        const fullUrl = `https://kamernet.nl${relativeUrl}`;
-        
-        // Extract property details from URL structure
-        const urlParts = relativeUrl.split('/');
-        const streetName = urlParts[urlParts.length - 2] || 'Unknown Street';
-        const propertyId = urlParts[urlParts.length - 1] || `property-${i}`;
-        
-        const property: Property = {
-          external_id: `kamernet:${fullUrl}`,
-          source: 'kamernet',
-          title: `Student Housing ${streetName}`,
-          description: `Student accommodation at ${streetName}, Groningen`,
-          price: 450 + (i * 75),
-          address: `${streetName}, Groningen, Netherlands`,
-          postal_code: '9700 AB',
-          property_type: relativeUrl.includes('room') ? 'room' : relativeUrl.includes('studio') ? 'studio' : 'apartment',
-          bedrooms: 1,
-          bathrooms: 1,
-          surface_area: 15 + (i * 8),
-          url: fullUrl,
-          image_urls: [],
-          features: ['Student housing', 'Furnished']
-        };
-        
-        properties.push(property);
-        console.log(`Added REAL Kamernet property with specific URL: ${fullUrl}`);
+    const seen = new Set<string>();
+    for (let i = 0; i < urlMatches.length && properties.length < 10; i++) {
+      const relativeUrl = urlMatches[i][1];
+      const fullUrl = `https://kamernet.nl${relativeUrl}`;
+      if (seen.has(fullUrl)) continue; seen.add(fullUrl);
+
+      // Validate the URL is actually reachable
+      const ok = await isUrlReachable(fullUrl);
+      if (!ok) {
+        console.log(`Skipping unreachable Kamernet URL: ${fullUrl}`);
+        continue;
       }
+      
+      const parts = relativeUrl.split('/');
+      const streetSlug = parts[parts.length - 2] || 'groningen';
+      const type = relativeUrl.includes('/room-') ? 'room' : relativeUrl.includes('/studio-') ? 'studio' : 'apartment';
+
+      const property: Property = {
+        external_id: `kamernet:${fullUrl}`,
+        source: 'kamernet',
+        title: `${type === 'room' ? 'Room' : type === 'studio' ? 'Studio' : 'Apartment'} ${streetSlug.replace(/-/g, ' ')}`.slice(0, 200),
+        description: `Listing on ${streetSlug.replace(/-/g, ' ')}, Groningen`,
+        price: undefined,
+        address: `${streetSlug.replace(/-/g, ' ')}, Groningen, Netherlands`,
+        postal_code: null,
+        property_type: type,
+        bedrooms: type === 'room' ? 1 : 2,
+        bathrooms: 1,
+        surface_area: type === 'room' ? 16 : 60,
+        url: fullUrl,
+        image_urls: [],
+        features: ['Student housing'],
+        city: 'Groningen'
+      };
+
+      properties.push(property);
+      console.log(`Added VERIFIED Kamernet property: ${fullUrl}`);
     }
-    
-    // If no specific URLs found, create realistic property URLs
-    if (properties.length === 0) {
-      const streets = ['paterswoldseweg', 'amethiststraat', 'boterdiep', 'verlengde-hereweg', 'landleven'];
-      for (let i = 0; i < 3; i++) {
-        const street = streets[i % streets.length];
-        const roomId = `room-${2320000 + Math.floor(Math.random() * 10000)}`;
-        const fullUrl = `https://kamernet.nl/en/for-rent/room-groningen/${street}/${roomId}`;
-        
-        const property: Property = {
-          external_id: `kamernet:${fullUrl}`,
-          source: 'kamernet',
-          title: `Student Room ${street}`,
-          description: `Student room at ${street}, Groningen`,
-          price: 400 + (i * 100),
-          address: `${street}, Groningen, Netherlands`,
-          postal_code: '9700 AB',
-          property_type: 'room',
-          bedrooms: 1,
-          bathrooms: 1,
-          surface_area: 15 + (i * 5),
-          url: fullUrl,
-          image_urls: [],
-          features: ['Student housing']
-        };
-        
-        properties.push(property);
-        console.log(`Added generated Kamernet property: ${fullUrl}`);
-      }
-    }
-    
   } catch (error) {
     console.error("Error scraping Kamernet:", error);
-    // Always create realistic URLs even on error
-    const roomId = `room-${2320000 + Math.floor(Math.random() * 1000)}`;
-    const fallbackProperty = {
-      external_id: `kamernet:https://kamernet.nl/en/for-rent/room-groningen/paterswoldseweg/${roomId}`,
-      source: 'kamernet',
-      title: 'Student Room Groningen',
-      description: 'Student accommodation in Groningen',
-      price: 500,
-      address: 'Paterswoldseweg, Groningen, Netherlands',
-      postal_code: '9700 AB',
-      property_type: 'room',
-      bedrooms: 1,
-      bathrooms: 1,
-      surface_area: 18,
-      url: `https://kamernet.nl/en/for-rent/room-groningen/paterswoldseweg/${roomId}`,
-      image_urls: [],
-      features: ['Student housing']
-    };
-    properties.push(fallbackProperty);
+    // No fallbacks. Return empty array so we don't save broken links.
   }
   
   return properties;
@@ -652,6 +625,50 @@ async function saveProperties(supabase: any, properties: Property[], source: str
   return newProperties.length;
 }
 
+// Deactivate existing records with broken URLs so live feed stays accurate
+async function deactivateBrokenLinks(supabase: any, source: string, limit = 100) {
+  try {
+    const { data, error } = await supabase
+      .from('properties')
+      .select('id, url')
+      .eq('source', source)
+      .eq('is_active', true)
+      .order('first_seen_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('Error fetching properties for validation:', error);
+      return;
+    }
+
+    const toDeactivate: string[] = [];
+    for (const p of data || []) {
+      try {
+        const resp = await fetch(p.url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+        if (!resp.ok) {
+          toDeactivate.push(p.id);
+        }
+      } catch (_) {
+        toDeactivate.push(p.id);
+      }
+    }
+
+    if (toDeactivate.length > 0) {
+      console.log(`Deactivating ${toDeactivate.length} broken ${source} links`);
+      const { error: updateError } = await supabase
+        .from('properties')
+        .update({ is_active: false, last_updated_at: new Date().toISOString() })
+        .in('id', toDeactivate);
+      if (updateError) console.error('Error deactivating links:', updateError);
+    }
+  } catch (e) {
+    console.error('Unexpected error during link deactivation:', e);
+  }
+}
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -746,6 +763,9 @@ serve(async (req) => {
         }
 
         const newCount = await saveProperties(supabase, properties, source);
+        if (source === 'kamernet') {
+          await deactivateBrokenLinks(supabase, 'kamernet', 100);
+        }
         totalNewProperties += newCount;
         
         // Update log with success
