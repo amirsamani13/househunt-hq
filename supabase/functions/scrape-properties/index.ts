@@ -191,16 +191,30 @@ function extractFeatures(html: string): string[] {
   return features;
 }
 
-// Helper to verify a listing URL is reachable (avoid broken links)
-async function isUrlReachable(url: string): Promise<boolean> {
+// Helper to verify listing availability with content heuristics for some sources
+async function isListingAvailable(url: string, source?: string): Promise<boolean> {
   try {
+    // Some sites return 200 for "not found" pages; fetch HTML and inspect
     const resp = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml'
       }
     });
-    return resp.ok; // true for 2xx
+    if (!resp.ok) return false;
+    const html = await resp.text();
+
+    if (source === 'kamernet') {
+      const notFoundPatterns = [
+        /page not found/i,
+        /this page does not exist/i,
+        /listing (?:is )?not available/i,
+        /the page you are looking for/i
+      ];
+      if (notFoundPatterns.some((re) => re.test(html))) return false;
+    }
+
+    return true;
   } catch (_) {
     return false;
   }
@@ -235,8 +249,8 @@ async function scrapeKamernet(): Promise<Property[]> {
       const fullUrl = `https://kamernet.nl${relativeUrl}`;
       if (seen.has(fullUrl)) continue; seen.add(fullUrl);
 
-      // Validate the URL is actually reachable
-      const ok = await isUrlReachable(fullUrl);
+      // Validate the URL is actually reachable and not a Not Found page
+      const ok = await isListingAvailable(fullUrl, 'kamernet');
       if (!ok) {
         console.log(`Skipping unreachable Kamernet URL: ${fullUrl}`);
         continue;
@@ -644,12 +658,8 @@ async function deactivateBrokenLinks(supabase: any, source: string, limit = 100)
     const toDeactivate: string[] = [];
     for (const p of data || []) {
       try {
-        const resp = await fetch(p.url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-          }
-        });
-        if (!resp.ok) {
+        const ok = await isListingAvailable(p.url, source);
+        if (!ok) {
           toDeactivate.push(p.id);
         }
       } catch (_) {

@@ -380,10 +380,22 @@ serve(async (req) => {
 
         // If a row was returned, it means a new record was inserted (not ignored)
         if (inserted && inserted.length > 0) {
-          if (userProfile?.email) {
-            await sendNotifications(property, alert, userProfile);
+          try {
+            if (userProfile?.email) {
+              await sendNotifications(property, alert, userProfile);
+            }
+            await supabase
+              .from('notifications')
+              .update({ delivery_status: 'sent', delivered_at: new Date().toISOString() })
+              .eq('id', inserted[0].id);
+            notificationsSent++;
+          } catch (e) {
+            console.error('Failed to deliver notification', e);
+            await supabase
+              .from('notifications')
+              .update({ delivery_status: 'failed', delivery_error: String(e) })
+              .eq('id', inserted[0].id);
           }
-          notificationsSent++;
         } else {
           console.log(`Duplicate notification for user ${alert.user_id} and property ${property.id} — already sent.`);
         }
