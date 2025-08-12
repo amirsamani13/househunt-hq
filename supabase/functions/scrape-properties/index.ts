@@ -122,9 +122,12 @@ function sanitizeTitle(input?: string, addressFallback?: string, urlFallback?: s
   t = t.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ');
   // Strip HTML tags
   t = t.replace(/<[^>]*>/g, ' ');
-  // Remove JSON/code-like blobs
-  t = t.replace(/[\{\[][^\}\]]*[\}\]]/g, ' ');
+  // Remove JSON/code-like blobs and code fragments
+  t = t.replace(/[\{\[][\s\S]*?[\}\]]/g, ' ');
   t = t.replace(/\b(function|var|let|const|return|=>|if\s*\(|else|true|false|null|undefined)\b/gi, ' ');
+  // Remove broken ternary/optional fragments like "??english'title':'Room f'"
+  t = t.replace(/\?\?[^\n<>"]+/g, ' ');
+  t = t.replace(/:[^\s]{1,20}\?[^\s]{1,20}/g, ' ');
   // Common noisy fragments seen in broken pages
   t = t.replace(/englishTitle\s*[:=].*$/i, ' ');
   t = t.replace(/"[^"]*"\s*:\s*"[^"]*"/g, ' ');
@@ -134,8 +137,8 @@ function sanitizeTitle(input?: string, addressFallback?: string, urlFallback?: s
   t = t.replace(/\s{2,}/g, ' ').trim();
 
   // Prefer extracting a short street-like token
-  const streetRegex = /([A-Z][\p{L}.'-]+(?:\s+(?:van|der|de|den))?(?:\s+[A-Z][\p{L}.'-]+)*\s+(?:straat|laan|weg|plein|singel|dwarsstraat|kade|gracht|hof|dijk|pad|baan|markt|park)(?:\s*\d+[A-Za-z-]?)?)/iu;
-  const specialNames = /(Tussen\s+Beide\s+Markten|Nieuwe\s+Blekerstraat|Helper\s+Weststraat|Boteringestraat|Stoeldraaierstraat|Meeuwerderbaan)/i;
+  const streetRegex = /([A-Z][\p{L}."'-]+(?:\s+(?:van|der|de|den))?(?:\s+[A-Z][\p{L}."'-]+)*\s+(?:straat|laan|weg|plein|singel|dwarsstraat|kade|gracht|hof|dijk|pad|baan|markt|park)(?:\s*\d+[A-Za-z-]?)?)/iu;
+  const specialNames = /(Tussen\s+Beide\s+Markten|Nieuwe\s+Blekerstraat|Helper\s+Weststraat|Boteringestraat|Stoeldraaierstraat|Meeuwerderbaan|Meeuwerderweg|Tuinbouwdwarsstraat|Eeldersingel)/i;
   const m = t.match(streetRegex) || t.match(specialNames);
   if (m) t = m[1];
 
@@ -149,7 +152,7 @@ function sanitizeTitle(input?: string, addressFallback?: string, urlFallback?: s
     const slug = decodeURIComponent(urlFallback).match(/\/([a-z0-9-]+)(?:\/?$)/i);
     if (slug) {
       const candidate = slug[1].replace(/-/g, ' ');
-      if (/\b(straat|laan|weg|plein|singel|kade|gracht|markt)\b/i.test(candidate)) t = candidate;
+      if (/\b(straat|laan|weg|plein|singel|kade|gracht|markt|dwarsstraat|singel|hof)\b/i.test(candidate)) t = candidate;
     }
   }
 
@@ -686,18 +689,18 @@ async function saveProperties(supabase: any, properties: Property[], source: str
           return true;
         });
     
-    if (validProperties.length > 0) {
-      const { error: insertError } = await supabase
-        .from('properties')
-        .insert(validProperties);
-        
-      if (insertError) {
-        console.error("Error inserting properties:", insertError);
-        throw insertError;
-      }
-      
-      console.log(`Successfully saved ${validProperties.length} properties for ${source}`);
-    }
+if (validProperties.length > 0) {
+  const { error: upsertError } = await supabase
+    .from('properties')
+    .upsert(validProperties, { onConflict: 'external_id' });
+  
+  if (upsertError) {
+    console.error("Error upserting properties:", upsertError);
+    throw upsertError;
+  }
+  
+  console.log(`Successfully saved ${validProperties.length} properties for ${source}`);
+}
     
     return validProperties.length;
   }

@@ -321,8 +321,7 @@ const safeProperties = (newProperties || []).filter((p: any) => {
          !path.includes('/overzicht') && 
          !/overzicht|\?|filter|page|sort/i.test(title) &&
          title.length > 5 &&
-         title.toLowerCase() !== 'property in groningen' &&
-         p.price > 0; // Ensure we have valid price data
+         title.toLowerCase() !== 'property in groningen';
 });
 
     console.log(`Found ${safeProperties.length} valid properties from the last ${hours} hours (filtered from ${newProperties?.length || 0})`);
@@ -337,10 +336,11 @@ const safeProperties = (newProperties || []).filter((p: any) => {
         .eq('user_id', alert.user_id)
         .maybeSingle();
 
-      // Respect pause state even in test mode
-      if (userProfile?.notifications_paused) {
-        continue;
-      }
+// Respect pause state, but allow sending in test mode
+if (userProfile?.notifications_paused && !inTest) {
+  console.log(`Skipping alert ${alert.id} for user ${alert.user_id} due to notifications_paused`);
+  continue;
+}
 
       let sentForAlert = 0;
       let skipped404 = 0;
