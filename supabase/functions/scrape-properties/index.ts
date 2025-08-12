@@ -502,7 +502,8 @@ async function scrapeKamernet(): Promise<Property[]> {
     url: 'https://kamernet.nl/en/for-rent/properties-groningen',
     source: 'kamernet',
     domain: 'https://kamernet.nl',
-    linkPattern: /href="(\/en\/for-rent\/(?:room|studio|apartment)-groningen\/[^"?&]+)"/g,
+    // Match only detail pages in EN or NL that include a type and a slug after "-groningen/"
+    linkPattern: /href="(\/(?:en\/for-rent|nl\/te-huur)\/(?:room|studio|apartment|kamer|appartement)-groningen\/[a-z0-9-]+)"/gi,
     typeDefault: 'room'
   });
 }

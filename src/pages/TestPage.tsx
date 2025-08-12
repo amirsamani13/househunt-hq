@@ -132,7 +132,6 @@ export default function TestPage() {
     }
   };
 
-  // Send notifications for last 24h to current user (send-all test)
   const sendNotifications24hAll = async () => {
     if (!user) {
       toast({ title: 'Login required', description: 'Please sign in to send test notifications', variant: 'destructive' });
@@ -146,6 +145,18 @@ export default function TestPage() {
       toast({ title: 'Notifications sent', description: `Result: ${data?.message || 'Done'}` });
     } catch (error: any) {
       toast({ title: 'Failed', description: error.message || 'Could not send notifications', variant: 'destructive' });
+    }
+  };
+
+  // One-click cleanup: repairs bad titles in DB
+  const runRepair = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('repair-properties');
+      if (error) throw error;
+      toast({ title: 'Repair complete', description: `Scanned ${data?.scanned || 0}, fixed ${data?.fixed || 0}` });
+      fetchProperties();
+    } catch (error: any) {
+      toast({ title: 'Repair failed', description: error.message || 'Could not repair properties', variant: 'destructive' });
     }
   };
 
@@ -194,6 +205,9 @@ export default function TestPage() {
                 </Button>
                 <Button onClick={sendNotifications24hAll} disabled={isLoading || !user}>
                   Send 24h to Me
+                </Button>
+                <Button variant="outline" onClick={runRepair} disabled={isLoading}>
+                  Repair Titles
                 </Button>
                 <Button variant="destructive" onClick={() => updatePause(true)}>
                   Pause notifications
