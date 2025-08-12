@@ -42,49 +42,59 @@ function extractPrice(text: string): number | null {
   return match ? parseFloat(match[1]) : null;
 }
 
-// COMMAND 3: Fixed sanitizeTitle function - more aggressive cleaning
+// Enhanced sanitizeTitle function - fix broken titles and clean thoroughly
 function sanitizeTitle(input: string): string {
-  let t = (input || '').toString();
+  if (!input) return 'Property in Groningen';
   
-  // Remove HTML entities
+  let t = String(input).trim();
+  
+  // Remove HTML entities and tags
   t = t.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  t = t.replace(/<[^>]*>/g, '');
   
-  // AGGRESSIVE URL cleaning - remove everything after ? or # AND any URL-like patterns
+  // Remove price mentions that break titles (€123, euro, etc.)
+  t = t.replace(/\b(?:€|EUR)\s*\d+(?:[.,]\d+)?\s*(?:euro?|per\s*maand?)?\b/gi, '');
+  t = t.replace(/\b\d+\s*euro?\b/gi, '');
+  t = t.replace(/\bfor\s*rent\s*\d+\s*euro?\b/gi, 'for rent');
+  
+  // Fix broken sentence patterns like "Room for rent 460 euro Van ,"
+  t = t.replace(/\b(Room|Studio|Apartment|House)\s+for\s+rent\s+\d+\s+euro\s+([A-Z][a-z]*)\s*,?\s*$/i, '$1 for rent on $2');
+  t = t.replace(/\bfor\s+rent\s+\d+\s+euro\s*,?\s*$/i, 'for rent');
+  t = t.replace(/\b(Room|Studio|Apartment|House)\s+for\s+rent\s+([A-Z][a-z]*)\s*,?\s*$/i, '$1 for rent on $2');
+  
+  // Remove trailing commas and incomplete words
+  t = t.replace(/\s*,\s*$/, '');
+  t = t.replace(/\s+,\s*$/, '');
+  
+  // Remove site-specific patterns
+  t = t.replace(/\s*[\-|–—|•]\s*(pararius|kamernet|grunoverhuur|funda|campusgroningen|rotsvast|expatrentalsholland|vandermeulen|housinganywhere)\s*$/i, '');
+  
+  // Remove URL parameters and artifacts
   t = t.split('?')[0].split('#')[0];
-  t = t.replace(/[\?\&=\%].*$/g, ''); // Remove anything that looks like URL parameters
-  t = t.replace(/[A-Za-z]+=[A-Za-z0-9\%\-\+\&]+/g, ''); // Remove key=value patterns
+  t = t.replace(/[\?\&=\%].*$/g, '');
   
-  // Remove URL encoding artifacts
-  t = t.replace(/\%[0-9A-Fa-f]{2}/g, '');
-  t = t.replace(/forsaleorrent=\d+/gi, '');
-  t = t.replace(/localityid=\d+/gi, '');
-  t = t.replace(/locationofinterest=[^&\s]*/gi, '');
-  t = t.replace(/moveunavailablelistingstothebottom=[^&\s]*/gi, '');
-  t = t.replace(/orderby=\d+/gi, '');
-  t = t.replace(/take=\d+/gi, '');
-  t = t.replace(/filter[^&\s]*/gi, '');
-  t = t.replace(/group[^&\s]*/gi, '');
-  t = t.replace(/page=\d+/gi, '');
-  
-  // Remove obvious non-title words
-  t = t.replace(/\b(overzicht|aanbod|zoeken|filters?|page\s*\d+|sort\s*(?:newest|pricelow|pricehigh))\b/gi, '');
-  
-  // Strip brand suffixes like " - Pandomo" or " | Funda"
-  t = t.replace(/\s*[\-|–—|•]\s*(pararius|kamernet|grunoverhuur|funda|campusgroningen|rotsvast|expatrentalsholland|vandermeulen|housinganywhere|dcwonen|huure|maxxhuren|kpmakelaars|househunting|woldringverhuur|050vastgoed|pandomo)\s*$/i, '');
-  
-  // COMMAND 3: Remove alphanumeric strings like t38e404943 (8+ chars with both letters and numbers)
-  // More aggressive patterns to catch all variations
+  // Remove alphanumeric IDs (8+ chars with both letters and numbers)
   t = t.replace(/\b[a-zA-Z]*\d+[a-zA-Z0-9]*[a-zA-Z]+[a-zA-Z0-9]*\b/g, '');
   t = t.replace(/\b\w*[a-zA-Z]+\d+\w*\b/g, '');
-  t = t.replace(/\b[a-z]\d{7,}\b/gi, ''); // Remove single letter followed by 7+ digits
-  t = t.replace(/\b\d{7,}[a-z]\b/gi, ''); // Remove 7+ digits followed by single letter
-  t = t.replace(/\b[a-z0-9]{8,}\b/gi, ''); // Remove any 8+ character alphanumeric strings
+  t = t.replace(/\b[a-z0-9]{8,}\b/gi, '');
   
-  // Clean up messy characters and collapse spaces
-  t = t.replace(/[^\w\s\-\,\.]/g, ' '); // Keep only word chars, spaces, dashes, commas, dots
+  // Remove filter/search terms
+  t = t.replace(/\b(overzicht|aanbod|zoeken|filters?|page\s*\d+|sort\s*(?:newest|pricelow|pricehigh))\b/gi, '');
+  
+  // Clean up spacing and punctuation
+  t = t.replace(/[^\w\s\-\,\.]/g, ' ');
   t = t.replace(/\s{2,}/g, ' ').trim();
   
-  if (!t || t.length < 3) t = 'Property in Groningen';
+  // Final validation and fallback
+  if (!t || t.length < 3 || /^(for rent|property|room|studio|apartment)$/i.test(t)) {
+    t = 'Property in Groningen';
+  }
+  
+  // Capitalize first letter
+  if (t && t.length > 0) {
+    t = t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  
   if (t.length > 200) t = t.slice(0, 200);
   return t;
 }
@@ -141,19 +151,39 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
       }
     }
     
-    // Extract title from h1, h2, or title tag if not found in JSON-LD
+    // Extract title with enhanced patterns including address extraction
     if (!propertyTitle) {
       const titlePatterns = [
+        // First try specific property title patterns
+        /<h1[^>]*class=["'][^"']*(?:property|listing|title)[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i,
+        /<h2[^>]*class=["'][^"']*(?:property|listing|title)[^"']*["'][^>]*>([\s\S]*?)<\/h2>/i,
+        // Then try any h1/h2
         /<h1[^>]*>([\s\S]*?)<\/h1>/i,
         /<h2[^>]*>([\s\S]*?)<\/h2>/i,
+        // Finally try title tag
         /<title[^>]*>([\s\S]*?)<\/title>/i
       ];
       for (const pattern of titlePatterns) {
         const match = detailHtml.match(pattern);
         if (match) {
-          propertyTitle = extractText(match[1]);
-          break;
+          let title = extractText(match[1]);
+          // Skip if title contains obvious non-property content
+          if (title && !title.toLowerCase().includes('overzicht') && 
+              !title.toLowerCase().includes('filter') && 
+              title.length > 5) {
+            propertyTitle = title;
+            break;
+          }
         }
+      }
+    }
+    
+    // Try to extract address from title or URL if title seems to be an address
+    if (propertyTitle && !propertyAddress) {
+      // Check if title contains address-like content
+      const addressMatch = propertyTitle.match(/\b([A-Z][a-z]+(?:straat|laan|weg|plein|singel|dwarsstraat|kade))\b/);
+      if (addressMatch) {
+        propertyAddress = addressMatch[1] + ', Groningen';
       }
     }
     
@@ -256,12 +286,29 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
     
     console.log(`Extracted data for ${url}: title="${propertyTitle}", beds=${propertyBedrooms}, baths=${propertyBathrooms}, surface=${propertySurface}m²`);
     
-    // Build clean title from URL segments if needed
+    // Build clean title from URL segments or address if needed
     if (!propertyTitle || propertyTitle.length < 5) {
+      // Try to extract meaningful info from URL
       const urlPath = url.replace(/https?:\/\/[^\/]+\//, '');
       const segments = urlPath.split('/').filter(s => s && s.length > 2 && !s.includes('?') && !s.includes('&'));
-      const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).replace(/[-_]/g, ' '));
-      propertyTitle = meaningful.join(' ').trim() || `${typeDefault} in Groningen`;
+      
+      // Look for street names in URL segments
+      const streetSegment = segments.find(s => {
+        const decoded = decodeURIComponent(s).toLowerCase();
+        return decoded.includes('straat') || decoded.includes('laan') || 
+               decoded.includes('weg') || decoded.includes('plein') ||
+               decoded.includes('singel') || decoded.includes('kade');
+      });
+      
+      if (streetSegment) {
+        const street = decodeURIComponent(streetSegment).replace(/[-_]/g, ' ');
+        propertyTitle = `${typeDefault.charAt(0).toUpperCase() + typeDefault.slice(1)} on ${street}`;
+      } else if (propertyAddress && propertyAddress !== 'Groningen, Netherlands') {
+        propertyTitle = `${typeDefault.charAt(0).toUpperCase() + typeDefault.slice(1)} in ${propertyAddress}`;
+      } else {
+        const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).replace(/[-_]/g, ' '));
+        propertyTitle = meaningful.join(' ').trim() || `${typeDefault.charAt(0).toUpperCase() + typeDefault.slice(1)} in Groningen`;
+      }
     }
     
     // Clean and validate title

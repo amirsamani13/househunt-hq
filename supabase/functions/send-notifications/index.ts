@@ -314,7 +314,15 @@ const safeProperties = (newProperties || []).filter((p: any) => {
   const u = String(p.url || '');
   const title = String(p.title || '');
   const path = u.split('?')[0].toLowerCase();
-  return u && !u.includes('?') && !path.includes('/overzicht') && !/overzicht|\?|filter|page|sort/i.test(title);
+  
+  // Enhanced filtering to ensure quality properties
+  return u && 
+         !u.includes('?') && 
+         !path.includes('/overzicht') && 
+         !/overzicht|\?|filter|page|sort/i.test(title) &&
+         title.length > 5 &&
+         title.toLowerCase() !== 'property in groningen' &&
+         p.price > 0; // Ensure we have valid price data
 });
 
     console.log(`Found ${safeProperties.length} valid properties from the last ${hours} hours (filtered from ${newProperties?.length || 0})`);
@@ -369,28 +377,42 @@ const safeProperties = (newProperties || []).filter((p: any) => {
         }
 
         const message = createNotificationMessage(property, alert.name);
-        // Atomically record the notification first to avoid duplicate sends across concurrent runs
+        // Check if notification already exists for this user-property pair
+        const { data: existingNotif } = await supabase
+          .from('notifications')
+          .select('id')
+          .eq('user_id', alert.user_id)
+          .eq('property_id', property.id)
+          .maybeSingle();
+        
+        if (existingNotif) {
+          console.log(`Duplicate notification for user ${alert.user_id} and property ${property.id} — already sent.`);
+          continue;
+        }
+        
+        // Record the notification
         const { data: inserted, error: upsertError } = await supabase
           .from('notifications')
-          .upsert({
+          .insert({
             user_id: alert.user_id,
             property_id: property.id,
             alert_id: alert.id,
             message,
             sent_at: new Date().toISOString()
-          }, { onConflict: 'user_id,property_id', ignoreDuplicates: true })
+          })
           .select('id');
 
         if (upsertError) {
-          console.error('Failed to upsert notification record', upsertError);
+          console.error('Failed to insert notification record', upsertError);
           continue;
         }
-
-        // If a row was returned, it means a new record was inserted (not ignored)
+        
+        // Send the notification
         if (inserted && inserted.length > 0) {
           try {
             if (userProfile?.email) {
               await sendNotifications(property, alert, userProfile);
+              console.log(`Email sent to ${userProfile.email} for property: ${property.title}`);
             }
             await supabase
               .from('notifications')
@@ -404,8 +426,6 @@ const safeProperties = (newProperties || []).filter((p: any) => {
               .update({ delivery_status: 'failed', delivery_error: String(e) })
               .eq('id', inserted[0].id);
           }
-        } else {
-          console.log(`Duplicate notification for user ${alert.user_id} and property ${property.id} — already sent.`);
         }
       }
     }
