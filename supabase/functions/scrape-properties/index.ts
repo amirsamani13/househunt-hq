@@ -42,7 +42,7 @@ function extractPrice(text: string): number | null {
   return match ? parseFloat(match[1]) : null;
 }
 
-// Enhanced sanitizeTitle function - fix broken titles and clean thoroughly
+// Enhanced sanitizeTitle function - fix broken titles and preserve important address info
 function sanitizeTitle(input: string): string {
   if (!input) return 'Property in Groningen';
   
@@ -52,38 +52,57 @@ function sanitizeTitle(input: string): string {
   t = t.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
   t = t.replace(/<[^>]*>/g, '');
   
-  // Remove price mentions that break titles (€123, euro, etc.)
+  // Preserve street names in Dutch (important for addresses)
+  const streetPattern = /\b[A-Z][a-z]+(?:straat|laan|weg|plein|singel|dwarsstraat|kade|gracht|park|hof)\b/g;
+  const streetNames = t.match(streetPattern) || [];
+  
+  // Fix broken patterns like "Room for rent 460 euro Van ," -> should extract "Van Heemskerckstraat"
+  // Look for incomplete street names that got cut off
+  const incompleteStreetMatch = t.match(/\b(Room|Studio|Apartment|House|For rent).*?(\d+)\s*euro\s+([A-Z][a-z]*)\s*,?\s*$/i);
+  if (incompleteStreetMatch) {
+    const propertyType = incompleteStreetMatch[1];
+    const streetStart = incompleteStreetMatch[3];
+    // Try to reconstruct the title - assume it's a street name
+    t = `${propertyType} for rent in ${streetStart}straat`;
+  }
+  
+  // Remove price mentions that break titles (€123, euro, etc.) but preserve the rest
   t = t.replace(/\b(?:€|EUR)\s*\d+(?:[.,]\d+)?\s*(?:euro?|per\s*maand?)?\b/gi, '');
   t = t.replace(/\b\d+\s*euro?\b/gi, '');
-  t = t.replace(/\bfor\s*rent\s*\d+\s*euro?\b/gi, 'for rent');
   
-  // Fix broken sentence patterns like "Room for rent 460 euro Van ,"
-  t = t.replace(/\b(Room|Studio|Apartment|House)\s+for\s+rent\s+\d+\s+euro\s+([A-Z][a-z]*)\s*,?\s*$/i, '$1 for rent on $2');
-  t = t.replace(/\bfor\s+rent\s+\d+\s+euro\s*,?\s*$/i, 'for rent');
-  t = t.replace(/\b(Room|Studio|Apartment|House)\s+for\s+rent\s+([A-Z][a-z]*)\s*,?\s*$/i, '$1 for rent on $2');
+  // Clean up broken patterns while preserving structure
+  t = t.replace(/\bfor\s*rent\s*\d+\s*euro?\s*/gi, 'for rent ');
   
-  // Remove trailing commas and incomplete words
+  // Remove trailing commas and fix spacing
   t = t.replace(/\s*,\s*$/, '');
   t = t.replace(/\s+,\s*$/, '');
+  t = t.replace(/\s*,\s+/g, ', ');
   
-  // Remove site-specific patterns
+  // Remove site-specific patterns at the end
   t = t.replace(/\s*[\-|–—|•]\s*(pararius|kamernet|grunoverhuur|funda|campusgroningen|rotsvast|expatrentalsholland|vandermeulen|housinganywhere)\s*$/i, '');
   
   // Remove URL parameters and artifacts
   t = t.split('?')[0].split('#')[0];
   t = t.replace(/[\?\&=\%].*$/g, '');
   
-  // Remove alphanumeric IDs (8+ chars with both letters and numbers)
-  t = t.replace(/\b[a-zA-Z]*\d+[a-zA-Z0-9]*[a-zA-Z]+[a-zA-Z0-9]*\b/g, '');
-  t = t.replace(/\b\w*[a-zA-Z]+\d+\w*\b/g, '');
-  t = t.replace(/\b[a-z0-9]{8,}\b/gi, '');
+  // Remove alphanumeric IDs (8+ chars with both letters and numbers) but preserve street names
+  t = t.replace(/\b(?![A-Z][a-z]*(?:straat|laan|weg|plein|singel|dwarsstraat|kade))[a-zA-Z]*\d+[a-zA-Z0-9]*[a-zA-Z]+[a-zA-Z0-9]*\b/g, '');
+  t = t.replace(/\b(?![A-Z][a-z]*(?:straat|laan|weg|plein|singel|dwarsstraat|kade))\w*[a-zA-Z]+\d+\w*\b/g, '');
+  t = t.replace(/\b(?![A-Z][a-z]*(?:straat|laan|weg|plein|singel|dwarsstraat|kade))[a-z0-9]{8,}\b/gi, '');
   
   // Remove filter/search terms
   t = t.replace(/\b(overzicht|aanbod|zoeken|filters?|page\s*\d+|sort\s*(?:newest|pricelow|pricehigh))\b/gi, '');
   
-  // Clean up spacing and punctuation
-  t = t.replace(/[^\w\s\-\,\.]/g, ' ');
+  // Clean up spacing and punctuation - preserve normal punctuation
+  t = t.replace(/[^\w\s\-\,\.\(\)]/g, ' ');
   t = t.replace(/\s{2,}/g, ' ').trim();
+  
+  // Restore street names if they were accidentally removed
+  for (const street of streetNames) {
+    if (!t.includes(street)) {
+      t = t + ' ' + street;
+    }
+  }
   
   // Final validation and fallback
   if (!t || t.length < 3 || /^(for rent|property|room|studio|apartment)$/i.test(t)) {
