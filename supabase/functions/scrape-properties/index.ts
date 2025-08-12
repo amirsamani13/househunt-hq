@@ -96,6 +96,25 @@ function sanitizeAddress(input?: string): string {
   return t;
 }
 
+// Build a guaranteed clean title from type + address or URL
+function buildCleanTitle(typeDefault: string, address?: string, url?: string): string {
+  const type = typeDefault ? typeDefault.charAt(0).toUpperCase() + typeDefault.slice(1) : 'Property';
+  let location = '';
+  const addr = address ? address.trim() : '';
+  if (addr) {
+    const firstPart = addr.split(',')[0].trim();
+    if (firstPart && !/^groningen$/i.test(firstPart)) location = firstPart;
+  }
+  if (!location && url) {
+    const m = url.match(/\/([a-z-]+(?:straat|laan|weg|plein|singel|dwarsstraat|kade|gracht))/i) ||
+              url.match(/\/(vinkhuizen|paddepoel|selwerd|beijum|helpman|oosterpark|binnenstad)/i);
+    if (m) location = m[1].replace(/-/g, ' ');
+  }
+  if (!location) location = 'Groningen';
+  return `${type} for rent in ${location}`;
+}
+
+
 // COMMAND 1: New helper function for extracting property details
 async function extractPropertyDetails(url: string, source: string, typeDefault: string): Promise<Property | null> {
   try {
@@ -324,6 +343,10 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
     
     const cleanAddress = sanitizeAddress(propertyAddress);
     
+    // Guarantee a complete, human-friendly title with a location
+    if (!propertyTitle || /for\s*rent\s*in\s*,?\s*$/i.test(propertyTitle) || /for\s*rent\s*in\s*,/i.test(propertyTitle)) {
+      propertyTitle = buildCleanTitle(typeDefault, cleanAddress, url);
+    }
     
     // Final validation: reject if title still contains artifacts or is too generic
     if (!propertyTitle || propertyTitle.length < 5 ||
