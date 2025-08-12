@@ -337,7 +337,7 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
     
     // Final data processing with improved validation
     const property: Property = {
-      external_id: `${source}_${url.split('/').pop() || Date.now()}`,
+      external_id: `${source}:${url}`,
       source,
       title: propertyTitle || extractPropertyTitle('', url),
       description: '',
