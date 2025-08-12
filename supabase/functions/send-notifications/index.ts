@@ -265,6 +265,7 @@ serve(async (req) => {
 const windowHours = Number(body?.windowHours ?? 24);
 const onlyUserEmail: string | undefined = body?.only_user_email;
 const testAll: boolean = Boolean(body?.testAll) || body?.test === 'all';
+const inTestGlobal: boolean = testAll || Boolean(body?.test);
 
     // Optionally resolve user by email
     let userIdFilter: string | undefined;
@@ -337,7 +338,7 @@ const safeProperties = (newProperties || []).filter((p: any) => {
         .maybeSingle();
 
 // Respect pause state, but allow sending in test mode
-if (userProfile?.notifications_paused && !inTest) {
+if (userProfile?.notifications_paused && !inTestGlobal) {
   console.log(`Skipping alert ${alert.id} for user ${alert.user_id} due to notifications_paused`);
   continue;
 }
@@ -361,11 +362,10 @@ if (userProfile?.notifications_paused && !inTest) {
           console.error('Error validating property URL', property.url, e);
         }
 
-        const inTest = testAll || Boolean(body?.test);
-        const match = inTest ? true : matchesAlert(property, alert);
+const match = inTestGlobal ? true : matchesAlert(property, alert);
         if (!match) continue;
 
-        if (inTest) {
+        if (inTestGlobal) {
           // Test mode: send without recording to DB (no de-dup). If testAll=true, send ALL within window.
           if (userProfile?.email) {
             await sendNotifications(property, alert, userProfile);

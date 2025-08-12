@@ -538,7 +538,8 @@ async function scrapeExpatRentalHolland(): Promise<Property[]> {
   return await scrapeGeneric({
     url: 'https://www.expatrentalsholland.com/offer/in/groningen',
     source: 'expatrentalsholland',
-    linkPattern: /href="(\/offer\/[^"]+)"/g,
+    // Avoid category/listing pages like /offer/in/groningen/sort/... or /page/2
+    linkPattern: /href="(\/offer\/(?!in\/)[^"]+)"/g,
     typeDefault: 'apartment'
   });
 }
