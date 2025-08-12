@@ -114,6 +114,95 @@ function buildCleanTitle(typeDefault: string, address?: string, url?: string): s
   return `${type} for rent in ${location}`;
 }
 
+// Aggressively sanitize raw titles to a short street-like title
+function sanitizeTitle(input?: string, addressFallback?: string, urlFallback?: string): string {
+  if (!input) input = '';
+  let t = String(input);
+  // Remove script/style tags and their content
+  t = t.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ');
+  // Strip HTML tags
+  t = t.replace(/<[^>]*>/g, ' ');
+  // Remove JSON/code-like blobs
+  t = t.replace(/[\{\[][^\}\]]*[\}\]]/g, ' ');
+  t = t.replace(/\b(function|var|let|const|return|=>|if\s*\(|else|true|false|null|undefined)\b/gi, ' ');
+  // Common noisy fragments seen in broken pages
+  t = t.replace(/englishTitle\s*[:=].*$/i, ' ');
+  t = t.replace(/"[^"]*"\s*:\s*"[^"]*"/g, ' ');
+  // Decode entities and collapse whitespace
+  t = t.replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ');
+  t = t.replace(/[\r\n\\\n\\\r]+/g, ' ');
+  t = t.replace(/\s{2,}/g, ' ').trim();
+
+  // Prefer extracting a short street-like token
+  const streetRegex = /([A-Z][\p{L}.'-]+(?:\s+(?:van|der|de|den))?(?:\s+[A-Z][\p{L}.'-]+)*\s+(?:straat|laan|weg|plein|singel|dwarsstraat|kade|gracht|hof|dijk|pad|baan|markt|park)(?:\s*\d+[A-Za-z-]?)?)/iu;
+  const specialNames = /(Tussen\s+Beide\s+Markten|Nieuwe\s+Blekerstraat|Helper\s+Weststraat|Boteringestraat|Stoeldraaierstraat|Meeuwerderbaan)/i;
+  const m = t.match(streetRegex) || t.match(specialNames);
+  if (m) t = m[1];
+
+  // If still too generic, try address fallback first token
+  if ((!t || t.length < 3) && addressFallback) {
+    const first = String(addressFallback).split(',')[0].trim();
+    if (first) t = first;
+  }
+  // URL fallback: pick last slug that looks like a street
+  if ((!t || t.length < 3) && urlFallback) {
+    const slug = decodeURIComponent(urlFallback).match(/\/([a-z0-9-]+)(?:\/?$)/i);
+    if (slug) {
+      const candidate = slug[1].replace(/-/g, ' ');
+      if (/\b(straat|laan|weg|plein|singel|kade|gracht|markt)\b/i.test(candidate)) t = candidate;
+    }
+  }
+
+  // Final cleanup and trim length
+  t = t.replace(/\s{2,}/g, ' ').trim();
+  if (t.length > 80) t = t.slice(0, 80).trim();
+  // Disallow titles that still look like code or are empty
+  if (!t || /[:\{\}\[\];]/.test(t) || /\b(overzicht|filter)\b/i.test(t)) return '';
+  return t;
+}
+
+// Source-specific precise selectors for title extraction
+function getTitleFromHtmlBySource(html: string, source: string): string | null {
+  const patternsBySource: Record<string, RegExp[]> = {
+    kamernet: [
+      /<h1[^>]*class=["'][^"']*(?:title|header|listing)[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i,
+      /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i,
+      /<h2[^>]*class=["'][^"']*(?:title|header)[^"']*["'][^>]*>([\s\S]*?)<\/h2>/i
+    ],
+    housinganywhere: [
+      /<h1[^>]*>([\s\S]*?)<\/h1>/i,
+      /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i
+    ],
+    pararius: [
+      /<h1[^>]*class=["'][^"']*listing[^"']*title[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i,
+      /<h1[^>]*>([\s\S]*?)<\/h1>/i,
+      /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i
+    ],
+    funda: [
+      /<h1[^>]*>([\s\S]*?)<\/h1>/i,
+      /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i
+    ],
+    grunoverhuur: [ /<h1[^>]*>([\s\S]*?)<\/h1>/i, /<h2[^>]*>([\s\S]*?)<\/h2>/i ],
+    rotsvast: [ /<h1[^>]*>([\s\S]*?)<\/h1>/i, /<meta[^>]*og:title[^>]*content=["']([^"']+)["']/i ],
+    expatrentalsholland: [ /<h1[^>]*>([\s\S]*?)<\/h1>/i, /<meta[^>]*og:title[^>]*content=["']([^"']+)["']/i ],
+    vandermeulen: [ /<h1[^>]*>([\s\S]*?)<\/h1>/i ],
+    dcwonen: [ /<h1[^>]*>([\s\S]*?)<\/h1>/i ],
+    huure: [ /<h1[^>]*>([\s\S]*?)<\/h1>/i ],
+    maxxhuren: [ /<h1[^>]*>([\s\S]*?)<\/h1>/i ],
+    kpmakelaars: [ /<h1[^>]*>([\s\S]*?)<\/h1>/i ],
+    househunting: [ /<h1[^>]*>([\s\S]*?)<\/h1>/i ],
+    woldringverhuur: [ /<h1[^>]*>([\s\S]*?)<\/h1>/i ],
+    "050vastgoed": [ /<h1[^>]*>([\s\S]*?)<\/h1>/i ],
+    pandomo: [ /<h1[^>]*>([\s\S]*?)<\/h1>/i ],
+    campusgroningen: [ /<h1[^>]*>([\s\S]*?)<\/h1>/i ]
+  };
+  const patterns = patternsBySource[source] || [ /<h1[^>]*>([\s\S]*?)<\/h1>/i, /<h2[^>]*>([\s\S]*?)<\/h2>/i, /<title[^>]*>([\s\S]*?)<\/title>/i ];
+  for (const rx of patterns) {
+    const m = html.match(rx);
+    if (m) return extractText(m[1]);
+  }
+  return null;
+}
 
 // COMMAND 1: New helper function for extracting property details
 async function extractPropertyDetails(url: string, source: string, typeDefault: string): Promise<Property | null> {
@@ -135,7 +224,7 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
     const detailHtml = await detailResp.text();
     
     // Initialize variables for THIS SPECIFIC property (fresh variables each time)
-    let propertyTitle = '';
+    let propertyTitle = ''; let rawTitle = '';
     let propertyAddress = '';
     let propertyPrice: number | null = null;
     let propertyBedrooms: number | null = null;
@@ -157,42 +246,13 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
       }
     }
     
-    // COMPLETELY REWRITTEN title extraction logic
+    // Precise per-source title extraction, then aggressive sanitization
+    rawTitle = getTitleFromHtmlBySource(detailHtml, source) || '';
+    const candidateTitle = rawTitle || propertyTitle;
+    propertyTitle = sanitizeTitle(candidateTitle, propertyAddress, url);
     if (!propertyTitle) {
-      // Get title from multiple sources and clean it properly
-      const titleSources = [];
-      
-      // Try h1 tags
-      const h1Matches = Array.from(detailHtml.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi));
-      for (const match of h1Matches) {
-        titleSources.push(match[1]);
-      }
-      
-      // Try title tag
-      const titleMatch = detailHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-      if (titleMatch) {
-        titleSources.push(titleMatch[1]);
-      }
-      
-      // Try meta property tags
-      const metaMatch = detailHtml.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
-      if (metaMatch) {
-        titleSources.push(metaMatch[1]);
-      }
-      
-      // Process each title source with the new extraction function
-      for (const source of titleSources) {
-        const cleanTitle = extractPropertyTitle(source, url);
-        if (cleanTitle && cleanTitle !== 'Property for rent in Groningen') {
-          propertyTitle = cleanTitle;
-          break;
-        }
-      }
-      
-      // Fallback: construct from URL
-      if (!propertyTitle || propertyTitle === 'Property for rent in Groningen') {
-        propertyTitle = extractPropertyTitle(url, url);
-      }
+      // Fallbacks to ensure a short street-like title
+      propertyTitle = sanitizeTitle(propertyAddress, propertyAddress, url) || sanitizeTitle(url, propertyAddress, url);
     }
     
     // Extract address with enhanced location detection
@@ -306,54 +366,29 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
       }
     }
     
-    console.log(`Extracted data for ${url}: title="${propertyTitle}", beds=${propertyBedrooms}, baths=${propertyBathrooms}, surface=${propertySurface}m²`);
+    console.log(`Extracted data for ${url}: rawTitle="${rawTitle}", sanitizedTitle="${propertyTitle}", beds=${propertyBedrooms}, baths=${propertyBathrooms}, surface=${propertySurface}m²`);
     
-    // Build clean title from URL segments or address if needed
-    if (!propertyTitle || propertyTitle.length < 5) {
-      // Try to extract meaningful info from URL
-      const urlPath = url.replace(/https?:\/\/[^\/]+\//, '');
-      const segments = urlPath.split('/').filter(s => s && s.length > 2 && !s.includes('?') && !s.includes('&'));
-      
-      // Look for street names in URL segments
-      const streetSegment = segments.find(s => {
-        const decoded = decodeURIComponent(s).toLowerCase();
-        return decoded.includes('straat') || decoded.includes('laan') || 
-               decoded.includes('weg') || decoded.includes('plein') ||
-               decoded.includes('singel') || decoded.includes('kade');
-      });
-      
-      if (streetSegment) {
-        const street = decodeURIComponent(streetSegment).replace(/[-_]/g, ' ');
-        propertyTitle = `${typeDefault.charAt(0).toUpperCase() + typeDefault.slice(1)} on ${street}`;
-      } else if (propertyAddress && propertyAddress !== 'Groningen, Netherlands') {
-        propertyTitle = `${typeDefault.charAt(0).toUpperCase() + typeDefault.slice(1)} in ${propertyAddress}`;
-      } else {
-        const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).replace(/[-_]/g, ' '));
-        propertyTitle = meaningful.join(' ').trim() || `${typeDefault.charAt(0).toUpperCase() + typeDefault.slice(1)} in Groningen`;
-      }
+    // Fallback: derive a short street-like title from URL if still empty
+    if (!propertyTitle || propertyTitle.length < 3) {
+      propertyTitle = sanitizeTitle(url, propertyAddress, url);
     }
     
-    // Use the new extraction function to create a clean title
-    if (!propertyTitle || propertyTitle.length < 5) {
-      propertyTitle = extractPropertyTitle(detailHtml, url);
-    } else {
-      // Clean existing title using the new function
-      propertyTitle = extractPropertyTitle(propertyTitle, url);
-    }
+    // Ensure final title is short and clean
+    propertyTitle = sanitizeTitle(propertyTitle, propertyAddress, url);
     
     const cleanAddress = sanitizeAddress(propertyAddress);
     
-    // Guarantee a complete, human-friendly title with a location
-    if (!propertyTitle || /for\s*rent\s*in\s*,?\s*$/i.test(propertyTitle) || /for\s*rent\s*in\s*,/i.test(propertyTitle)) {
-      propertyTitle = buildCleanTitle(typeDefault, cleanAddress, url);
+    // Guarantee a short street-like title if still empty
+    if (!propertyTitle) {
+      propertyTitle = sanitizeTitle(cleanAddress, cleanAddress, url);
     }
     
     // Final validation: reject if title still contains artifacts or is too generic
-    if (!propertyTitle || propertyTitle.length < 5 ||
+    if (!propertyTitle || propertyTitle.length < 3 ||
+        /\bfor\s*rent\b/i.test(propertyTitle) ||
         propertyTitle.includes('?') || propertyTitle.includes('&') || propertyTitle.includes('=') || 
         propertyTitle.toLowerCase().includes('filter') || propertyTitle.toLowerCase().includes('overzicht') ||
-        /\b[a-z0-9]{8,}\b/i.test(propertyTitle) ||
-        propertyTitle.toLowerCase() === 'property for rent in groningen') {
+        /\b[a-z0-9]{8,}\b/i.test(propertyTitle)) {
       console.log(`Rejecting property with invalid title: "${propertyTitle}"`);
       return null;
     }
@@ -362,7 +397,7 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
     const property: Property = {
       external_id: `${source}:${url}`,
       source,
-      title: propertyTitle || extractPropertyTitle('', url),
+      title: propertyTitle,
       description: '',
       price: propertyPrice || undefined,
       address: cleanAddress || 'Groningen, Netherlands',
@@ -377,9 +412,8 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
       city: 'Groningen'
     };
     
-    // Validate that we have meaningful data
-    if (!property.title || property.title === 'Property for rent in Groningen' || 
-        property.title.includes('for rent in ,') || property.title.endsWith('for rent ,')) {
+    // Validate that we have meaningful data (must be a short street-like string)
+    if (!property.title || /\bfor\s*rent\b/i.test(property.title)) {
       console.log(`Skipping property with invalid title: "${property.title}"`);
       return null;
     }
@@ -631,24 +665,26 @@ async function saveProperties(supabase: any, properties: Property[], source: str
     throw fetchError;
   }
   
-  const existingIds = new Set(existingProperties?.map((p: any) => p.external_id) || []);
-  const newProperties = properties.filter(p => !existingIds.has(p.external_id));
-  
-  console.log(`${newProperties.length} new properties to save for ${source}`);
-  
-  if (newProperties.length > 0) {
-    // Final validation before saving
-    const validProperties = newProperties.filter(p => {
-      const hasValidTitle = p.title && p.title.length >= 5 && !p.title.includes('?') && !p.title.includes('&');
-      const hasValidUrl = p.url && !p.url.includes('?') && !p.url.includes('&') && p.url.startsWith('http');
-      const isNotGeneric = !p.title.toLowerCase().includes('overzicht') && !p.title.toLowerCase().includes('filter');
-      
-      if (!hasValidTitle || !hasValidUrl || !isNotGeneric) {
-        console.log(`Rejecting invalid property: "${p.title}" | ${p.url}`);
-        return false;
-      }
-      return true;
-    });
+    const existingIds = new Set(existingProperties?.map((p: any) => p.external_id) || []);
+    const newProperties = properties.filter(p => !existingIds.has(p.external_id));
+    
+    console.log(`${newProperties.length} new properties to save for ${source}`);
+    
+    if (newProperties.length > 0) {
+      // Final validation before saving and clone objects to avoid mutation
+      const validProperties = newProperties
+        .map(p => ({ ...p }))
+        .filter(p => {
+          const hasValidTitle = p.title && p.title.length >= 3 && !/\bfor\s*rent\b/i.test(p.title);
+          const hasValidUrl = p.url && !p.url.includes('?') && !p.url.includes('&') && p.url.startsWith('http');
+          const isNotGeneric = !p.title.toLowerCase().includes('overzicht') && !p.title.toLowerCase().includes('filter');
+          
+          if (!hasValidTitle || !hasValidUrl || !isNotGeneric) {
+            console.log(`Rejecting invalid property: "${p.title}" | ${p.url}`);
+            return false;
+          }
+          return true;
+        });
     
     if (validProperties.length > 0) {
       const { error: insertError } = await supabase
