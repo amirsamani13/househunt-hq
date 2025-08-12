@@ -377,16 +377,18 @@ const safeProperties = (newProperties || []).filter((p: any) => {
         }
 
         const message = createNotificationMessage(property, alert.name);
-        // Check if notification already exists for this user-property pair
+        // Check if notification already exists for this user-property pair in the last 48 hours
+        // This prevents both duplicates AND ensures new properties get notifications
         const { data: existingNotif } = await supabase
           .from('notifications')
-          .select('id')
+          .select('id, sent_at')
           .eq('user_id', alert.user_id)
           .eq('property_id', property.id)
+          .gte('sent_at', new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
           .maybeSingle();
         
         if (existingNotif) {
-          console.log(`Duplicate notification for user ${alert.user_id} and property ${property.id} — already sent.`);
+          console.log(`Duplicate notification for user ${alert.user_id} and property ${property.id} — already sent in last 48h.`);
           continue;
         }
         

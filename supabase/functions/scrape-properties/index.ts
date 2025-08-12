@@ -170,55 +170,75 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
       }
     }
     
-    // Extract title with enhanced patterns including address extraction
-    if (!propertyTitle) {
-      const titlePatterns = [
-        // First try specific property title patterns
-        /<h1[^>]*class=["'][^"']*(?:property|listing|title)[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i,
-        /<h2[^>]*class=["'][^"']*(?:property|listing|title)[^"']*["'][^>]*>([\s\S]*?)<\/h2>/i,
-        // Then try any h1/h2
-        /<h1[^>]*>([\s\S]*?)<\/h1>/i,
-        /<h2[^>]*>([\s\S]*?)<\/h2>/i,
-        // Finally try title tag
-        /<title[^>]*>([\s\S]*?)<\/title>/i
+    // Enhanced title and address extraction with better location handling
+    if (!propertyTitle || !propertyAddress) {
+      // Try to extract both title and address together
+      const combinedPatterns = [
+        // Look for title + location patterns
+        /<h1[^>]*>(.*?)<\/h1>[\s\S]*?(?:address|location|locatie|adres)[^>]*>(.*?)<\//i,
+        /<title[^>]*>(.*?)<\/title>/i,
+        /<h1[^>]*>(.*?)<\/h1>/i,
+        /<h2[^>]*>(.*?)<\/h2>/i
       ];
-      for (const pattern of titlePatterns) {
+      
+      for (const pattern of combinedPatterns) {
         const match = detailHtml.match(pattern);
         if (match) {
           let title = extractText(match[1]);
+          let address = match[2] ? extractText(match[2]) : '';
+          
           // Skip if title contains obvious non-property content
-          if (title && !title.toLowerCase().includes('overzicht') && 
-              !title.toLowerCase().includes('filter') && 
-              title.length > 5) {
-            propertyTitle = title;
-            break;
+          if (!title || title.toLowerCase().includes('overzicht') || 
+              title.toLowerCase().includes('filter') || title.length < 5) {
+            continue;
           }
+          
+          // Extract location from URL if not found
+          if (!address) {
+            const urlMatch = url.match(/\/([a-z-]+(?:straat|laan|weg|plein|singel|dwarsstraat|kade|gracht))/i);
+            if (urlMatch) {
+              address = urlMatch[1].replace(/-/g, ' ') + ', Groningen';
+            }
+          }
+          
+          // Try to extract location from the title itself
+          if (!address) {
+            const locationInTitle = title.match(/\b([A-Z][a-z]*(?:straat|laan|weg|plein|singel|dwarsstraat|kade|gracht|centrum|wijk)|Vinkhuizen|Paddepoel|Selwerd|Beijum|Kranenburg|Helpman)\b/i);
+            if (locationInTitle) {
+              address = locationInTitle[1] + ', Groningen';
+            }
+          }
+          
+          // Construct a meaningful title with location
+          if (address && !propertyTitle) {
+            const propertyTypeMatch = title.match(/\b(Room|Studio|Apartment|House|Property)\b/i);
+            const propertyType = propertyTypeMatch ? propertyTypeMatch[1] : 'Property';
+            propertyTitle = `${propertyType} for rent in ${address.split(',')[0]}`;
+          } else if (!propertyTitle) {
+            propertyTitle = title;
+          }
+          
+          if (!propertyAddress && address) {
+            propertyAddress = address;
+          }
+          
+          if (propertyTitle && propertyAddress) break;
         }
       }
     }
     
-    // Try to extract address from title or URL if title seems to be an address
-    if (propertyTitle && !propertyAddress) {
-      // Check if title contains address-like content
-      const addressMatch = propertyTitle.match(/\b([A-Z][a-z]+(?:straat|laan|weg|plein|singel|dwarsstraat|kade))\b/);
-      if (addressMatch) {
-        propertyAddress = addressMatch[1] + ', Groningen';
-      }
-    }
-    
-    // Extract address using multiple comprehensive patterns
+    // Fallback: extract location from page content
     if (!propertyAddress) {
-      const addrPatterns = [
-        /class=["'][^"']*(address|adres|street|location|plaats)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|h\d|p)>/i,
-        /<(?:div|span|p)[^>]*class=["'][^"']*(?:street|location|address|adres)[^"']*["'][^>]*>(.*?)<\/(?:div|span|p)>/i,
-        /(?:address|adres|locatie|plaats)\s*[:=]\s*([^<\n]+)/i,
-        /(?:straat|street|location)\s*[:=]\s*([^<\n]+)/i
+      const locationPatterns = [
+        /(?:locatie|location|address|adres)\s*[:=]\s*([^<\n\r]+)/i,
+        /\b(Vinkhuizen|Paddepoel|Selwerd|Beijum|Kranenburg|Helpman|Groningen)\b/i,
+        /\b([A-Z][a-z]+(?:straat|laan|weg|plein|singel|dwarsstraat|kade|gracht))\b/
       ];
-      for (const pattern of addrPatterns) {
+      for (const pattern of locationPatterns) {
         const match = detailHtml.match(pattern);
         if (match) {
-          propertyAddress = extractText(match[2] || match[1]);
-          if (propertyAddress && propertyAddress.length > 5) break;
+          propertyAddress = match[1] + ', Groningen';
+          break;
         }
       }
     }
