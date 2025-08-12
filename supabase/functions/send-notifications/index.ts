@@ -321,6 +321,7 @@ const safeProperties = (newProperties || []).filter((p: any) => {
          !u.includes('?') && 
          !path.includes('/overzicht') && 
          !/overzicht|\?|filter|page|sort/i.test(title) &&
+         !/is[_\-\s]*missing/i.test(title) &&
          title.length > 5 &&
          title.toLowerCase() !== 'property in groningen';
 });

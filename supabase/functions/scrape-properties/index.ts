@@ -389,9 +389,9 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
     // Final validation: reject if title still contains artifacts or is too generic
     if (!propertyTitle || propertyTitle.length < 3 ||
         /\bfor\s*rent\b/i.test(propertyTitle) ||
-        propertyTitle.includes('?') || propertyTitle.includes('&') || propertyTitle.includes('=') || 
-        propertyTitle.toLowerCase().includes('filter') || propertyTitle.toLowerCase().includes('overzicht') ||
-        /\b[a-z0-9]{8,}\b/i.test(propertyTitle)) {
+        /\?|&|=/.test(propertyTitle) ||
+        /overzicht|filter/i.test(propertyTitle) ||
+        /is[_\-\s]*missing/i.test(propertyTitle)) {
       console.log(`Rejecting property with invalid title: "${propertyTitle}"`);
       return null;
     }
@@ -679,9 +679,10 @@ async function saveProperties(supabase: any, properties: Property[], source: str
       const validProperties = newProperties
         .map(p => ({ ...p }))
         .filter(p => {
-          const hasValidTitle = p.title && p.title.length >= 3 && !/\bfor\s*rent\b/i.test(p.title);
+          const title = String(p.title || '');
+          const hasValidTitle = title.length >= 3 && !/\bfor\s*rent\b/i.test(title) && !/is[_\-\s]*missing/i.test(title);
           const hasValidUrl = p.url && !p.url.includes('?') && !p.url.includes('&') && p.url.startsWith('http');
-          const isNotGeneric = !p.title.toLowerCase().includes('overzicht') && !p.title.toLowerCase().includes('filter');
+          const isNotGeneric = !title.toLowerCase().includes('overzicht') && !title.toLowerCase().includes('filter');
           
           if (!hasValidTitle || !hasValidUrl || !isNotGeneric) {
             console.log(`Rejecting invalid property: "${p.title}" | ${p.url}`);
