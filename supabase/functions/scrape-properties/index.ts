@@ -421,6 +421,16 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
       return null;
     }
     
+    // Validate bedroom/bathroom counts (reject unrealistic values)
+    if (property.bedrooms && (property.bedrooms > 6 || property.bedrooms < 0)) {
+      console.log(`Skipping property with invalid bedroom count: ${property.bedrooms}`);
+      return null;
+    }
+    if (property.bathrooms && (property.bathrooms > 4 || property.bathrooms < 0)) {
+      console.log(`Skipping property with invalid bathroom count: ${property.bathrooms}`);
+      return null;
+    }
+    
     console.log(`Final extracted data for ${url}: title="${property.title}", address="${property.address}", price=${property.price}`);
     return property;
     
@@ -448,16 +458,22 @@ async function scrapeGeneric(opts: { url: string; source: string; domain?: strin
     const matches = Array.from(html.matchAll(linkPattern));
     const seen = new Set<string>();
     
-    console.log(`Found ${matches.length} potential property URLs for ${source}`);
+  console.log(`Found ${matches.length} potential property URLs for ${source}`);
+  console.log(`${source} raw URLs found:`, matches.slice(0, 5).map(m => m[1])); // Debug first 5 URLs
+  
+  // COMMAND 2: Simplified loop - only call helper and add results
+  for (let i = 0; i < matches.length && properties.length < max; i++) {
+    const href = matches[i][1];
+    if (!href || href.includes('?') || href.includes('&')) {
+      console.log(`${source}: Skipping URL with query params: ${href}`);
+      continue;
+    }
     
-    // COMMAND 2: Simplified loop - only call helper and add results
-    for (let i = 0; i < matches.length && properties.length < max; i++) {
-      const href = matches[i][1];
-      if (!href || href.includes('?') || href.includes('&')) continue; // Skip URLs with query parameters
-      
-      const fullUrl = href.startsWith('http') ? href : `${domain ?? new URL(url).origin}${href}`;
-      if (seen.has(fullUrl)) continue; 
-      seen.add(fullUrl);
+    const fullUrl = href.startsWith('http') ? href : `${domain ?? new URL(url).origin}${href}`;
+    if (seen.has(fullUrl)) continue; 
+    seen.add(fullUrl);
+    
+    console.log(`${source}: Processing URL ${i+1}/${matches.length}: ${fullUrl}`);
       
       // Call the new helper function for each URL
       const propertyObject = await extractPropertyDetails(fullUrl, source, typeDefault);
@@ -502,8 +518,8 @@ async function scrapeKamernet(): Promise<Property[]> {
     url: 'https://kamernet.nl/en/for-rent/properties-groningen',
     source: 'kamernet',
     domain: 'https://kamernet.nl',
-    // Match only detail pages in EN or NL that include a type and a slug after "-groningen/"
-    linkPattern: /href="(\/(?:en\/for-rent|nl\/te-huur)\/(?:room|studio|apartment|kamer|appartement)-groningen\/[a-z0-9-]+)"/gi,
+    // Relaxed pattern to capture more Kamernet URLs - match any property detail page
+    linkPattern: /href="(\/(?:en\/for-rent|nl\/te-huur)\/(?:room|studio|apartment|kamer|appartement)-groningen\/[a-z0-9-]+(?:\/\d+)?)"/gi,
     typeDefault: 'room'
   });
 }

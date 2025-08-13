@@ -153,10 +153,27 @@ export default function TestPage() {
     try {
       const { data, error } = await supabase.functions.invoke('repair-properties');
       if (error) throw error;
-      toast({ title: 'Repair complete', description: `Scanned ${data?.scanned || 0}, fixed ${data?.fixed || 0}` });
+      toast({ title: 'Repair complete', description: `Scanned ${data?.scanned || 0}, fixed ${data?.fixed || 0}, purged ${data?.purged || 0}` });
       fetchProperties();
     } catch (error: any) {
       toast({ title: 'Repair failed', description: error.message || 'Could not repair properties', variant: 'destructive' });
+    }
+  };
+
+  // Test force send notifications (bypasses duplicate detection)
+  const testForceNotifications = async () => {
+    if (!user) {
+      toast({ title: 'Login required', description: 'Please sign in to test notifications', variant: 'destructive' });
+      return;
+    }
+    try {
+      const { data, error } = await supabase.functions.invoke('send-notifications', {
+        body: { only_user_email: user.email, force: true, windowHours: 24 }
+      });
+      if (error) throw error;
+      toast({ title: 'Force notifications sent', description: `Result: ${data?.message || 'Done'}` });
+    } catch (error: any) {
+      toast({ title: 'Failed', description: error.message || 'Could not send notifications', variant: 'destructive' });
     }
   };
 
@@ -206,8 +223,11 @@ export default function TestPage() {
                 <Button onClick={sendNotifications24hAll} disabled={isLoading || !user}>
                   Send 24h to Me
                 </Button>
+                <Button variant="secondary" onClick={testForceNotifications} disabled={isLoading || !user}>
+                  Force Test Notifications
+                </Button>
                 <Button variant="outline" onClick={runRepair} disabled={isLoading}>
-                  Repair Titles
+                  Repair & Purge Bad Data
                 </Button>
                 <Button variant="destructive" onClick={() => updatePause(true)}>
                   Pause notifications

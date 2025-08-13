@@ -40,30 +40,53 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Fetch problematic records
+    // Fetch problematic records - expanded criteria
     const { data: badProps, error } = await supabase
       .from('properties')
-      .select('id, title, url, address')
-      .or('title.ilike.%IS_MISSING%,title.ilike.%overzicht%,title.ilike.%filter%')
+      .select('id, title, url, address, bedrooms, bathrooms')
+      .or('title.ilike.%IS_MISSING%,title.ilike.%overzicht%,title.ilike.%filter%,title.ilike.%Property for rent in Groningen%,bedrooms.gt.6,bathrooms.gt.4')
       .limit(500);
 
     if (error) throw error;
 
     let fixed = 0;
+    let purged = 0;
     if (badProps && badProps.length > 0) {
       for (const p of badProps) {
-        const newTitle = sanitizeTitleFromUrl(p.url, p.address);
-        if (newTitle && newTitle !== p.title) {
-          const { error: upErr } = await supabase
+        // Check if property should be purged (unrealistic bed/bath counts or severely corrupted)
+        const shouldPurge = (p.bedrooms && p.bedrooms > 6) || 
+                           (p.bathrooms && p.bathrooms > 4) ||
+                           !p.title || 
+                           p.title.length < 3 ||
+                           /apartment\s+\d{7}|room\s+\d{7}/i.test(p.title);
+        
+        if (shouldPurge) {
+          const { error: purgeErr } = await supabase
             .from('properties')
-            .update({ title: newTitle, last_updated_at: new Date().toISOString() })
+            .update({ is_active: false, last_updated_at: new Date().toISOString() })
             .eq('id', p.id);
-          if (!upErr) fixed++;
+          if (!purgeErr) purged++;
+        } else {
+          // Try to fix the title
+          const newTitle = sanitizeTitleFromUrl(p.url, p.address);
+          if (newTitle && newTitle !== p.title) {
+            const updates: any = { title: newTitle, last_updated_at: new Date().toISOString() };
+            
+            // Fix unrealistic bedroom/bathroom counts
+            if (p.bedrooms && p.bedrooms > 6) updates.bedrooms = null;
+            if (p.bathrooms && p.bathrooms > 4) updates.bathrooms = null;
+            
+            const { error: upErr } = await supabase
+              .from('properties')
+              .update(updates)
+              .eq('id', p.id);
+            if (!upErr) fixed++;
+          }
         }
       }
     }
 
-    return new Response(JSON.stringify({ success: true, scanned: badProps?.length || 0, fixed }), {
+    return new Response(JSON.stringify({ success: true, scanned: badProps?.length || 0, fixed, purged }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

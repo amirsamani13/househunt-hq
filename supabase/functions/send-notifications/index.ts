@@ -266,6 +266,7 @@ const windowHours = Number(body?.windowHours ?? 24);
 const onlyUserEmail: string | undefined = body?.only_user_email;
 const testAll: boolean = Boolean(body?.testAll) || body?.test === 'all';
 const inTestGlobal: boolean = testAll || Boolean(body?.test);
+const forceMode: boolean = Boolean(body?.force); // Force mode bypasses duplicate checks
 
     // Optionally resolve user by email
     let userIdFilter: string | undefined;
@@ -378,19 +379,21 @@ const match = inTestGlobal ? true : matchesAlert(property, alert);
         }
 
         const message = createNotificationMessage(property, alert.name);
-        // Check if notification already exists for this user-property pair in the last 48 hours
-        // This prevents both duplicates AND ensures new properties get notifications
-        const { data: existingNotif } = await supabase
-          .from('notifications')
-          .select('id, sent_at')
-          .eq('user_id', alert.user_id)
-          .eq('property_id', property.id)
-          .gte('sent_at', new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
-          .maybeSingle();
-        
-        if (existingNotif) {
-          console.log(`Duplicate notification for user ${alert.user_id} and property ${property.id} — already sent in last 48h.`);
-          continue;
+        // Check if notification already exists for this user-property pair in the last 24 hours (reduced from 48h)
+        // Force mode bypasses duplicate checks for testing
+        if (!forceMode) {
+          const { data: existingNotif } = await supabase
+            .from('notifications')
+            .select('id, sent_at')
+            .eq('user_id', alert.user_id)
+            .eq('property_id', property.id)
+            .gte('sent_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+            .maybeSingle();
+          
+          if (existingNotif) {
+            console.log(`Duplicate notification for user ${alert.user_id} and property ${property.id} — already sent in last 24h.`);
+            continue;
+          }
         }
         
         // Record the notification
