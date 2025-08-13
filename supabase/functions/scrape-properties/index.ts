@@ -514,14 +514,94 @@ async function scrapePararius(): Promise<Property[]> {
 }
 
 async function scrapeKamernet(): Promise<Property[]> {
-  return await scrapeGeneric({
-    url: 'https://kamernet.nl/en/for-rent/properties-groningen',
-    source: 'kamernet',
-    domain: 'https://kamernet.nl',
-    // Relaxed pattern to capture more Kamernet URLs - match any property detail page
-    linkPattern: /href="(\/(?:en\/for-rent|nl\/te-huur)\/(?:room|studio|apartment|kamer|appartement)-groningen\/[a-z0-9-]+(?:\/\d+)?)"/gi,
-    typeDefault: 'room'
-  });
+  console.log('🔍 Starting Kamernet scraper with enhanced debugging...');
+  
+  try {
+    // First, let's fetch the page and see what links we actually find
+    const response = await fetch('https://kamernet.nl/en/for-rent/properties-groningen');
+    if (!response.ok) {
+      console.error(`❌ Kamernet page fetch failed: ${response.status} ${response.statusText}`);
+      return [];
+    }
+    
+    const html = await response.text();
+    console.log(`📄 Kamernet page fetched successfully (${html.length} chars)`);
+    
+    // Multiple link patterns to try
+    const patterns = [
+      // Current pattern
+      /href="(\/(?:en\/for-rent|nl\/te-huur)\/(?:room|studio|apartment|kamer|appartement)-groningen\/[a-z0-9-]+(?:\/\d+)?)"/gi,
+      // Simpler pattern
+      /href="(\/en\/for-rent\/[^"]*groningen[^"]*\/\d+)"/gi,
+      // Even simpler - any link with digits that mentions groningen
+      /href="(\/[^"]*groningen[^"]*\/\d{6,})"/gi,
+      // Very broad pattern
+      /href="(\/[^"]*\/\d{7})"/gi
+    ];
+    
+    let foundLinks: string[] = [];
+    
+    for (let i = 0; i < patterns.length; i++) {
+      const pattern = patterns[i];
+      const matches = [...html.matchAll(pattern)];
+      console.log(`🔍 Pattern ${i + 1}: Found ${matches.length} potential links`);
+      
+      if (matches.length > 0) {
+        foundLinks = matches.map(match => match[1]).slice(0, 10); // Limit to 10 for safety
+        console.log(`✅ Using pattern ${i + 1}, sample links:`, foundLinks.slice(0, 3));
+        break;
+      }
+    }
+    
+    if (foundLinks.length === 0) {
+      console.error('❌ No Kamernet links found with any pattern. Sampling HTML...');
+      console.log('📄 HTML sample:', html.substring(0, 1000));
+      return [];
+    }
+    
+    console.log(`🎯 Processing ${foundLinks.length} Kamernet property links...`);
+    
+    const properties: Property[] = [];
+    
+    for (const link of foundLinks) {
+      try {
+        const fullUrl = link.startsWith('http') ? link : `https://kamernet.nl${link}`;
+        console.log(`🏠 Extracting from: ${fullUrl}`);
+        
+        const property = await extractPropertyDetails(fullUrl, 'kamernet', 'room');
+        
+        if (property) {
+          // Add strict validation to prevent bad data
+          if (property.bedrooms && property.bedrooms > 6) {
+            console.log(`❌ Rejecting property with unrealistic bedrooms: ${property.bedrooms}`);
+            continue;
+          }
+          
+          if (property.bathrooms && property.bathrooms > 3) {
+            console.log(`❌ Rejecting property with unrealistic bathrooms: ${property.bathrooms}`);
+            continue;
+          }
+          
+          if (!property.title || property.title.includes('_IS_MISSING') || property.title.length < 10) {
+            console.log(`❌ Rejecting property with bad title: "${property.title}"`);
+            continue;
+          }
+          
+          properties.push(property);
+          console.log(`✅ Added Kamernet property: ${property.title}`);
+        }
+      } catch (error) {
+        console.error(`❌ Error processing Kamernet link ${link}:`, error);
+      }
+    }
+    
+    console.log(`🎉 Kamernet scraping completed: ${properties.length} valid properties found`);
+    return properties;
+    
+  } catch (error) {
+    console.error('❌ Critical Kamernet scraper error:', error);
+    return [];
+  }
 }
 
 async function scrapeGrunoverhuur(): Promise<Property[]> {

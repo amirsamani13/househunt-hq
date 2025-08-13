@@ -132,6 +132,36 @@ export default function TestPage() {
     }
   };
 
+  const testScraperNotifications = async () => {
+    if (!user) {
+      toast({ title: 'Login required', description: 'Please sign in to test scrapers', variant: 'destructive' });
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('send-notifications', {
+        body: { scraperTest: true, force: true }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Scraper Test Complete",
+        description: `Sent ${data.notifications_sent} test notifications (one per working scraper).`,
+      });
+    } catch (error: any) {
+      console.error('Error running scraper test:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to run scraper test",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const sendNotifications24hAll = async () => {
     if (!user) {
       toast({ title: 'Login required', description: 'Please sign in to send test notifications', variant: 'destructive' });
@@ -250,7 +280,7 @@ export default function TestPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Button 
                 onClick={testScraping} 
                 disabled={isLoading || !user}
@@ -258,15 +288,33 @@ export default function TestPage() {
                 className="flex items-center gap-2"
               >
                 <Play className="w-4 h-4" />
-                {isLoading ? "Scraping..." : "Start Scraping Test"}
+                {isLoading ? "Scraping..." : "Test All Scrapers"}
               </Button>
               
-              {!user && (
-                <div className="flex items-center gap-2 text-amber-600">
-                  <AlertCircle className="w-4 h-4" />
-                  <span className="text-sm">Please log in to test scraping</span>
-                </div>
-              )}
+              <Button 
+                onClick={testScraperNotifications} 
+                disabled={isLoading || !user}
+                variant="secondary"
+                size="lg"
+                className="flex items-center gap-2"
+              >
+                <AlertCircle className="w-4 h-4" />
+                {isLoading ? "Testing..." : "Scraper Test (17 emails)"}
+              </Button>
+            </div>
+            
+            {!user && (
+              <div className="flex items-center gap-2 text-amber-600">
+                <AlertCircle className="w-4 h-4" />
+                <span className="text-sm">Please log in to test scraping</span>
+              </div>
+            )}
+            
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <p className="text-sm text-blue-700">
+                <strong>Test All Scrapers:</strong> Run all property scrapers and check for new listings.<br/>
+                <strong>Scraper Test (17 emails):</strong> Send one test email per working scraper to verify functionality.
+              </p>
             </div>
             
             {isLoading && (
