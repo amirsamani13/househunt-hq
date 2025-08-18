@@ -355,6 +355,123 @@ export default function TestPage() {
     }
   };
 
+  const clearAllProperties = async () => {
+    if (!user) {
+      toast({
+        title: "Authentication Required", 
+        description: "Please log in to clear properties.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!confirm("Are you sure you want to delete ALL properties? This cannot be undone!")) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { error } = await supabase
+        .from('properties')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+
+      if (error) throw error;
+
+      toast({
+        title: "Database Cleared",
+        description: "All properties have been deleted.",
+      });
+    } catch (err: any) {
+      console.error('Error clearing properties:', err);
+      toast({
+        title: "Error",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const clearTestData = async () => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to clear test data.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!confirm("Clear all test/fake properties? This will remove Kamernet test data and other fake entries.")) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { error } = await supabase
+        .from('properties')
+        .delete()
+        .or('external_id.like.%test%,title.like.%. Ook ligt dit huis%,url.like.%test%');
+
+      if (error) throw error;
+
+      toast({
+        title: "Test Data Cleared",
+        description: "All test/fake properties have been removed.",
+      });
+    } catch (err: any) {
+      console.error('Error clearing test data:', err);
+      toast({
+        title: "Error", 
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const clearPropertiesBySource = async (source: string) => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to clear properties.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!confirm(`Delete all properties from ${source}? This cannot be undone!`)) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { error } = await supabase
+        .from('properties')
+        .delete()
+        .eq('source', source);
+
+      if (error) throw error;
+
+      toast({
+        title: "Properties Cleared",
+        description: `All properties from ${source} have been deleted.`,
+      });
+    } catch (err: any) {
+      console.error(`Error clearing ${source} properties:`, err);
+      toast({
+        title: "Error",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -532,6 +649,61 @@ export default function TestPage() {
                 <div>
                   <div className="font-semibold">Toggle Pause</div>
                   <div className="text-xs opacity-70">Pause/resume notifications</div>
+                </div>
+              </Button>
+            </div>
+
+            {/* Database Cleanup Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+              <Button 
+                onClick={clearAllProperties} 
+                disabled={isLoading}
+                variant="destructive"
+                className="h-16 flex flex-col gap-2"
+              >
+                <Trash2 className="h-6 w-6" />
+                <div>
+                  <div className="font-semibold">Clear All Properties</div>
+                  <div className="text-xs opacity-70">Delete entire database</div>
+                </div>
+              </Button>
+
+              <Button 
+                onClick={clearTestData} 
+                disabled={isLoading}
+                variant="outline"
+                className="h-16 flex flex-col gap-2"
+              >
+                <TestTube className="h-6 w-6" />
+                <div>
+                  <div className="font-semibold">Clear Test Data</div>
+                  <div className="text-xs opacity-70">Remove fake/test properties</div>
+                </div>
+              </Button>
+
+              <Button 
+                onClick={() => clearPropertiesBySource('kamernet')} 
+                disabled={isLoading}
+                variant="outline"
+                className="h-16 flex flex-col gap-2"
+              >
+                <Trash2 className="h-6 w-6" />
+                <div>
+                  <div className="font-semibold">Clear Kamernet</div>
+                  <div className="text-xs opacity-70">Remove all Kamernet data</div>
+                </div>
+              </Button>
+
+              <Button 
+                onClick={() => clearPropertiesBySource('pararius')} 
+                disabled={isLoading}
+                variant="outline"
+                className="h-16 flex flex-col gap-2"
+              >
+                <Trash2 className="h-6 w-6" />
+                <div>
+                  <div className="font-semibold">Clear Pararius</div>
+                  <div className="text-xs opacity-70">Remove all Pararius data</div>
                 </div>
               </Button>
             </div>

@@ -387,37 +387,80 @@ async function scrapeKamernet(): Promise<Property[]> {
       }
     }
     
-    // If all URLs failed, try a fallback approach
-    console.log('⚠️ All Kamernet URLs failed, trying fallback...');
-    
+  // Try multiple Kamernet approaches
+  console.log('⚠️ All initial Kamernet URLs failed, trying alternative approaches...');
+  
+  const alternativeUrls = [
+    'https://kamernet.nl/en/for-rent/rooms-groningen',
+    'https://kamernet.nl/en/for-rent/room-groningen',
+    'https://kamernet.nl/en/huren/kamer-groningen',
+    'https://kamernet.nl/huren/kamer-groningen',
+    'https://kamernet.nl/en/for-rent/property-groningen'
+  ];
+  
+  const alternativePatterns = [
+    /href="(\/en\/for-rent\/room-[^"]+)"/g,
+    /href="(\/huren\/kamer-[^"]+)"/g,
+    /href="(\/en\/for-rent\/property-[^"]+)"/g,
+    /href="(\/for-rent\/[^"]+groningen[^"]+)"/g
+  ];
+  
+  for (let i = 0; i < alternativeUrls.length; i++) {
     try {
-      // Create fake test property for development/testing
-      const testProperty: Property = {
-        id: crypto.randomUUID(),
-        external_id: `kamernet_test_${Date.now()}`,
-        source: 'kamernet',
-        title: '. Ook ligt dit huis dicht bij de nodige supermark(ten)',
-        description: 'Test property for Kamernet debugging',
-        price: 850,
-        address: 'Test Address, Groningen',
-        postal_code: '9700',
-        property_type: 'room',
-        bedrooms: 1,
-        bathrooms: 1,
-        surface_area: 15,
-        city: 'Groningen',
-        url: 'https://kamernet.nl/en/for-rent/room-test',
-        first_seen_at: new Date().toISOString(),
-        last_updated_at: new Date().toISOString(),
-        is_active: true,
-        currency: 'EUR'
-      };
+      console.log(`🔄 Trying Kamernet alternative URL ${i + 1}: ${alternativeUrls[i]}`);
       
-      console.log('🧪 Created Kamernet test property for debugging');
-      return [testProperty];
+      const response = await fetch(alternativeUrls[i], {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive'
+        }
+      });
+      
+      if (!response.ok) {
+        console.log(`❌ Alternative URL ${i + 1} failed: ${response.status}`);
+        continue;
+      }
+      
+      const html = await response.text();
+      console.log(`✅ Alternative URL ${i + 1} loaded, content length: ${html.length}`);
+      
+      // Try all patterns for this URL
+      let foundProperties: Property[] = [];
+      
+      for (const pattern of alternativePatterns) {
+        const matches = Array.from(html.matchAll(pattern));
+        console.log(`🔍 Pattern found ${matches.length} potential links`);
+        
+        for (const match of matches.slice(0, 5)) { // Limit to 5 per pattern
+          try {
+            const fullUrl = match[1].startsWith('http') ? match[1] : `https://kamernet.nl${match[1]}`;
+            console.log(`🏠 Extracting from: ${fullUrl}`);
+            
+            const property = await extractPropertyDetails(fullUrl, 'kamernet', 'room');
+            if (property && property.title && property.price && property.url) {
+              foundProperties.push(property);
+              console.log(`✅ Valid property found: ${property.title} - €${property.price}`);
+            }
+          } catch (err) {
+            console.log(`⚠️ Failed to extract from individual property: ${err}`);
+          }
+        }
+        
+        if (foundProperties.length > 0) {
+          console.log(`✅ Found ${foundProperties.length} valid Kamernet properties using alternative approach`);
+          return foundProperties;
+        }
+      }
       
     } catch (error) {
-      console.error('❌ Even fallback failed:', error);
+      console.log(`❌ Alternative URL ${i + 1} error:`, error);
+    }
+  }
+  
+  console.error('❌ All Kamernet approaches failed - no properties found');
       return [];
     }
     
@@ -456,46 +499,73 @@ async function scrapeFunda(): Promise<Property[]> {
 
 async function scrapeCampusGroningen(): Promise<Property[]> {
   return await scrapeGeneric({
-    url: 'https://www.campusgroningen.nl/en/rentals',
+    url: 'https://www.campusgroningen.nl/aanbod/huren',
     source: 'campusgroningen',
-    linkPattern: /href="(\/woning\/[^"]+)"/g,
+    linkPattern: /href="(\/[^"]*woning[^"]+)"/g,
     typeDefault: 'room'
   });
 }
 
 async function scrapeRotsvast(): Promise<Property[]> {
   return await scrapeGeneric({
-    url: 'https://www.rotsvast.nl/en/rentals/groningen',
+    url: 'https://www.rotsvast.nl/aanbod/huur',
     source: 'rotsvast',
-    linkPattern: /href="(\/en\/huren\/[^"]+)"/g,
+    linkPattern: /href="([^"]*\/huren\/[^"]+)"/g,
     typeDefault: 'apartment'
   });
 }
 
 async function scrapeExpatRentalHolland(): Promise<Property[]> {
   return await scrapeGeneric({
-    url: 'https://www.expatrentalsholland.com/offer/in/groningen',
+    url: 'https://www.expatrentalsholland.com/groningen',
     source: 'expatrentalsholland',
-    linkPattern: /href="(\/offer\/(?!in\/)[^"]+)"/g,
+    linkPattern: /href="(\/offer\/[^"]+)"/g,
     typeDefault: 'apartment'
   });
 }
 
 async function scrapeVanderMeulen(): Promise<Property[]> {
   return await scrapeGeneric({
-    url: 'https://www.vandermeulen.nl/aanbod/huur',
-    source: 'vandermeulen',
-    linkPattern: /href="(\/aanbod\/[^"]+)"/g,
+    url: 'https://www.vandermeulen.nl/woningaanbod',
+    source: 'vandermeulen', 
+    linkPattern: /href="([^"]*woningaanbod[^"]+)"/g,
     typeDefault: 'apartment'
   });
 }
 
 async function scrapeHousingAnywhere(): Promise<Property[]> {
   return await scrapeGeneric({
-    url: 'https://housinganywhere.com/s/Groningen--Netherlands',
+    url: 'https://housinganywhere.com/s/Groningen--Netherlands?moveInDate=2025-01-01',
     source: 'housinganywhere',
-    linkPattern: /href="(\/room\/[^"]+)"/g,
+    linkPattern: /href="(\/room\/[^"]+groningen[^"]*|\/room\/[\w-]+)"/g,
     typeDefault: 'room'
+  });
+}
+
+async function scrapeStudentHousing(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.student-housing.com/EN/student-housing/netherlands/groningen',
+    source: 'studenthousing',
+    linkPattern: /href="([^"]*\/student-housing\/[^"]+)"/g,
+    typeDefault: 'room'
+  });
+}
+
+async function scrapeRoomspot(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.roomspot.nl/groningen',
+    source: 'roomspot',
+    linkPattern: /href="([^"]*\/room\/[^"]+)"/g,
+    typeDefault: 'room'
+  });
+}
+
+async function scrapeRentberry(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://rentberry.com/s/groningen',
+    source: 'rentberry',
+    linkPattern: /href="([^"]*\/apartment\/[^"]+)"/g,
+    typeDefault: 'apartment'
   });
 }
 
@@ -590,7 +660,10 @@ serve(async (req) => {
       { name: 'rotsvast', scraper: scrapeRotsvast },
       { name: 'expatrentalsholland', scraper: scrapeExpatRentalHolland },
       { name: 'vandermeulen', scraper: scrapeVanderMeulen },
-      { name: 'housinganywhere', scraper: scrapeHousingAnywhere }
+      { name: 'housinganywhere', scraper: scrapeHousingAnywhere },
+      { name: 'studenthousing', scraper: scrapeStudentHousing },
+      { name: 'roomspot', scraper: scrapeRoomspot },
+      { name: 'rentberry', scraper: scrapeRentberry }
     ];
 
     const results: Record<string, any> = {};
