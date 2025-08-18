@@ -234,10 +234,7 @@ serve(async (req) => {
     // Get all active user alerts
     const { data: alerts, error: alertsError } = await supabase
       .from('user_alerts')
-      .select(`
-        *,
-        profiles!inner(email, phone, notifications_paused)
-      `)
+      .select('*')
       .eq('is_active', true);
 
     if (alertsError) {
@@ -330,7 +327,19 @@ serve(async (req) => {
     let notificationsSent = 0;
 
     for (const alert of alerts || []) {
-      const userProfile = alert.profiles;
+      // Get user profile for this alert
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('email, phone, notifications_paused')
+        .eq('user_id', alert.user_id)
+        .single();
+
+      if (!profileData) {
+        console.log(`No profile found for user ${alert.user_id}, skipping alert ${alert.name}`);
+        continue;
+      }
+
+      const userProfile = profileData;
       
       if (userProfile.notifications_paused && !force && !scraperTest) {
         console.log(`Skipping notifications for paused user: ${userProfile.email}`);
