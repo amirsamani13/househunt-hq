@@ -470,102 +470,348 @@ async function scrapeKamernet(): Promise<Property[]> {
 }
 
 async function scrapePararius(): Promise<Property[]> {
-  return await scrapeGeneric({
-    url: 'https://www.pararius.nl/huurwoningen/groningen',
-    source: 'pararius',
-    linkPattern: /href="(\/appartement-te-huur\/groningen\/[^"]+)"/g,
-    typeDefault: 'apartment'
-  });
+  console.log('🏠 Starting Pararius scraper...');
+  const urls = [
+    'https://www.pararius.nl/huurwoningen/groningen',
+    'https://www.pararius.nl/huurwoningen/groningen/0-2500',
+    'https://www.pararius.nl/apartement/huren/groningen'
+  ];
+  
+  for (const url of urls) {
+    const properties = await scrapeGeneric({
+      url,
+      source: 'pararius',
+      linkPattern: /href="(\/appartement-te-huur\/groningen\/[^"]+)"/g,
+      typeDefault: 'apartment'
+    });
+    if (properties.length > 0) {
+      console.log(`✅ Pararius found ${properties.length} properties from ${url}`);
+      return properties;
+    }
+  }
+  console.log('⚠️ Pararius: No properties found from any URL');
+  return [];
 }
 
 async function scrapeGrunoverhuur(): Promise<Property[]> {
-  return await scrapeGeneric({
-    url: 'https://www.grunoverhuur.nl/woningaanbod',
-    source: 'grunoverhuur',
-    linkPattern: /href="(\/woningaanbod\/huur\/groningen\/[^"]+)"/g,
-    typeDefault: 'apartment'
-  });
+  console.log('🏠 Starting Grunoverhuur scraper...');
+  const urls = [
+    'https://www.grunoverhuur.nl/woningaanbod',
+    'https://www.grunoverhuur.nl/woningaanbod/huur/groningen',
+    'https://www.grunoverhuur.nl/aanbod'
+  ];
+  
+  for (const url of urls) {
+    const properties = await scrapeGeneric({
+      url,
+      source: 'grunoverhuur',
+      linkPattern: /href="(\/woningaanbod\/huur\/groningen\/[^"]+)"/g,
+      typeDefault: 'apartment'
+    });
+    if (properties.length > 0) {
+      console.log(`✅ Grunoverhuur found ${properties.length} properties from ${url}`);
+      return properties;
+    }
+  }
+  console.log('⚠️ Grunoverhuur: No properties found from any URL');
+  return [];
 }
 
 async function scrapeFunda(): Promise<Property[]> {
-  return await scrapeGeneric({
-    url: 'https://www.funda.nl/huur/groningen/',
-    source: 'funda',
-    linkPattern: /href="(\/huur\/[^"]+\/groningen\/[^"]+)"/g,
-    typeDefault: 'apartment'
-  });
+  console.log('🏠 Starting Funda scraper...');
+  const urls = [
+    'https://www.funda.nl/huur/groningen/',
+    'https://www.funda.nl/huur/heel-nederland/groningen/',
+    'https://www.funda.nl/zoeken/huur?selected_area=["groningen"]',
+    'https://www.funda.nl/huur/groningen/0-2500/'
+  ];
+  
+  const patterns = [
+    /href="(\/huur\/[^"]+\/groningen\/[^"]+)"/g,
+    /href="(\/huur\/groningen\/[^"]+)"/g,
+    /data-object-url-base="([^"]*huur[^"]*groningen[^"]*)"/g
+  ];
+  
+  for (const url of urls) {
+    for (const linkPattern of patterns) {
+      const properties = await scrapeGeneric({
+        url,
+        source: 'funda',
+        linkPattern,
+        typeDefault: 'apartment'
+      });
+      if (properties.length > 0) {
+        console.log(`✅ Funda found ${properties.length} properties from ${url}`);
+        return properties;
+      }
+    }
+  }
+  console.log('⚠️ Funda: No properties found from any URL/pattern');
+  return [];
 }
 
 async function scrapeCampusGroningen(): Promise<Property[]> {
-  return await scrapeGeneric({
-    url: 'https://www.campusgroningen.nl/aanbod/huren',
-    source: 'campusgroningen',
-    linkPattern: /href="(\/[^"]*woning[^"]+)"/g,
-    typeDefault: 'room'
-  });
+  console.log('🏠 Starting Campus Groningen scraper...');
+  const urls = [
+    'https://www.campusgroningen.nl/aanbod/huren',
+    'https://www.campusgroningen.nl/aanbod',
+    'https://campusgroningen.nl/aanbod/huren',
+    'https://www.campusgroningen.nl/woningen'
+  ];
+  
+  const patterns = [
+    /href="(\/[^"]*woning[^"]+)"/g,
+    /href="(\/aanbod\/[^"]+)"/g,
+    /href="(\/property\/[^"]+)"/g
+  ];
+  
+  for (const url of urls) {
+    for (const linkPattern of patterns) {
+      try {
+        const properties = await scrapeGeneric({
+          url,
+          source: 'campusgroningen',
+          linkPattern,
+          typeDefault: 'room'
+        });
+        if (properties.length > 0) {
+          console.log(`✅ Campus Groningen found ${properties.length} properties from ${url}`);
+          return properties;
+        }
+      } catch (error) {
+        console.log(`⚠️ Campus Groningen failed ${url}: ${error.message}`);
+      }
+    }
+  }
+  console.log('⚠️ Campus Groningen: No properties found from any URL/pattern');
+  return [];
 }
 
 async function scrapeRotsvast(): Promise<Property[]> {
-  return await scrapeGeneric({
-    url: 'https://www.rotsvast.nl/aanbod/huur',
-    source: 'rotsvast',
-    linkPattern: /href="([^"]*\/huren\/[^"]+)"/g,
-    typeDefault: 'apartment'
-  });
+  console.log('🏠 Starting Rotsvast scraper...');
+  const urls = [
+    'https://www.rotsvast.nl/aanbod/huur',
+    'https://www.rotsvast.nl/woningaanbod/huur',
+    'https://rotsvast.nl/aanbod/huur/groningen'
+  ];
+  
+  const patterns = [
+    /href="([^"]*\/huren\/[^"]+)"/g,
+    /href="([^"]*\/aanbod\/[^"]*groningen[^"]*)"/g,
+    /href="([^"]*\/property\/[^"]+)"/g
+  ];
+  
+  for (const url of urls) {
+    for (const linkPattern of patterns) {
+      const properties = await scrapeGeneric({
+        url,
+        source: 'rotsvast',
+        linkPattern,
+        typeDefault: 'apartment'
+      });
+      if (properties.length > 0) {
+        console.log(`✅ Rotsvast found ${properties.length} properties from ${url}`);
+        return properties;
+      }
+    }
+  }
+  console.log('⚠️ Rotsvast: No properties found from any URL/pattern');
+  return [];
 }
 
 async function scrapeExpatRentalHolland(): Promise<Property[]> {
-  return await scrapeGeneric({
-    url: 'https://www.expatrentalsholland.com/groningen',
-    source: 'expatrentalsholland',
-    linkPattern: /href="(\/offer\/[^"]+)"/g,
-    typeDefault: 'apartment'
-  });
+  console.log('🏠 Starting Expat Rental Holland scraper...');
+  const urls = [
+    'https://www.expatrentalsholland.com/groningen',
+    'https://expatrentalsholland.com/properties/groningen',
+    'https://www.expatrentalsholland.com/properties?city=groningen'
+  ];
+  
+  const patterns = [
+    /href="(\/offer\/[^"]+)"/g,
+    /href="(\/properties\/[^"]*groningen[^"]*)"/g,
+    /href="(\/rental\/[^"]+)"/g
+  ];
+  
+  for (const url of urls) {
+    for (const linkPattern of patterns) {
+      const properties = await scrapeGeneric({
+        url,
+        source: 'expatrentalsholland',
+        linkPattern,
+        typeDefault: 'apartment'
+      });
+      if (properties.length > 0) {
+        console.log(`✅ Expat Rental Holland found ${properties.length} properties from ${url}`);
+        return properties;
+      }
+    }
+  }
+  console.log('⚠️ Expat Rental Holland: No properties found from any URL/pattern');
+  return [];
 }
 
 async function scrapeVanderMeulen(): Promise<Property[]> {
-  return await scrapeGeneric({
-    url: 'https://www.vandermeulen.nl/woningaanbod',
-    source: 'vandermeulen', 
-    linkPattern: /href="([^"]*woningaanbod[^"]+)"/g,
-    typeDefault: 'apartment'
-  });
+  console.log('🏠 Starting Van der Meulen scraper...');
+  const urls = [
+    'https://www.vandermeulen.nl/woningaanbod',
+    'https://www.vandermeulen.nl/huur',
+    'https://vandermeulen.nl/woningaanbod/huur'
+  ];
+  
+  const patterns = [
+    /href="([^"]*woningaanbod[^"]+)"/g,
+    /href="([^"]*\/huur\/[^"]+)"/g,
+    /href="([^"]*\/property\/[^"]+)"/g
+  ];
+  
+  for (const url of urls) {
+    for (const linkPattern of patterns) {
+      const properties = await scrapeGeneric({
+        url,
+        source: 'vandermeulen',
+        linkPattern,
+        typeDefault: 'apartment'
+      });
+      if (properties.length > 0) {
+        console.log(`✅ Van der Meulen found ${properties.length} properties from ${url}`);
+        return properties;
+      }
+    }
+  }
+  console.log('⚠️ Van der Meulen: No properties found from any URL/pattern');
+  return [];
 }
 
 async function scrapeHousingAnywhere(): Promise<Property[]> {
-  return await scrapeGeneric({
-    url: 'https://housinganywhere.com/s/Groningen--Netherlands?moveInDate=2025-01-01',
-    source: 'housinganywhere',
-    linkPattern: /href="(\/room\/[^"]+groningen[^"]*|\/room\/[\w-]+)"/g,
-    typeDefault: 'room'
-  });
+  console.log('🏠 Starting Housing Anywhere scraper...');
+  const currentDate = new Date().toISOString().split('T')[0];
+  const urls = [
+    `https://housinganywhere.com/s/Groningen--Netherlands?moveInDate=${currentDate}`,
+    'https://housinganywhere.com/s/Groningen--Netherlands',
+    'https://housinganywhere.com/nl/s/Groningen--Nederland',
+    'https://housinganywhere.com/rooms/groningen'
+  ];
+  
+  const patterns = [
+    /href="(\/room\/[^"]+groningen[^"]*)"/gi,
+    /href="(\/room\/[\w-]+)"/g,
+    /href="(\/property\/[^"]*groningen[^"]*)"/gi,
+    /"url":"([^"]*\/room\/[^"]+)"/g
+  ];
+  
+  for (const url of urls) {
+    for (const linkPattern of patterns) {
+      const properties = await scrapeGeneric({
+        url,
+        source: 'housinganywhere',
+        linkPattern,
+        typeDefault: 'room'
+      });
+      if (properties.length > 0) {
+        console.log(`✅ Housing Anywhere found ${properties.length} properties from ${url}`);
+        return properties;
+      }
+    }
+  }
+  console.log('⚠️ Housing Anywhere: No properties found from any URL/pattern');
+  return [];
 }
 
 async function scrapeStudentHousing(): Promise<Property[]> {
-  return await scrapeGeneric({
-    url: 'https://www.student-housing.com/EN/student-housing/netherlands/groningen',
-    source: 'studenthousing',
-    linkPattern: /href="([^"]*\/student-housing\/[^"]+)"/g,
-    typeDefault: 'room'
-  });
+  console.log('🏠 Starting Student Housing scraper...');
+  const urls = [
+    'https://www.student-housing.com/EN/student-housing/netherlands/groningen',
+    'https://student-housing.com/EN/groningen',
+    'https://www.student-housing.com/NL/studentenkamers/nederland/groningen'
+  ];
+  
+  const patterns = [
+    /href="([^"]*\/student-housing\/[^"]+)"/g,
+    /href="([^"]*\/groningen\/[^"]+)"/g,
+    /href="([^"]*\/room\/[^"]+)"/g
+  ];
+  
+  for (const url of urls) {
+    for (const linkPattern of patterns) {
+      const properties = await scrapeGeneric({
+        url,
+        source: 'studenthousing',
+        linkPattern,
+        typeDefault: 'room'
+      });
+      if (properties.length > 0) {
+        console.log(`✅ Student Housing found ${properties.length} properties from ${url}`);
+        return properties;
+      }
+    }
+  }
+  console.log('⚠️ Student Housing: No properties found from any URL/pattern');
+  return [];
 }
 
 async function scrapeRoomspot(): Promise<Property[]> {
-  return await scrapeGeneric({
-    url: 'https://www.roomspot.nl/groningen',
-    source: 'roomspot',
-    linkPattern: /href="([^"]*\/room\/[^"]+)"/g,
-    typeDefault: 'room'
-  });
+  console.log('🏠 Starting Roomspot scraper...');
+  const urls = [
+    'https://www.roomspot.nl/groningen',
+    'https://roomspot.nl/kamers/groningen',
+    'https://www.roomspot.nl/kamers-groningen'
+  ];
+  
+  const patterns = [
+    /href="([^"]*\/room\/[^"]+)"/g,
+    /href="([^"]*\/kamer\/[^"]+)"/g,
+    /href="([^"]*\/groningen\/[^"]+)"/g
+  ];
+  
+  for (const url of urls) {
+    for (const linkPattern of patterns) {
+      const properties = await scrapeGeneric({
+        url,
+        source: 'roomspot',
+        linkPattern,
+        typeDefault: 'room'
+      });
+      if (properties.length > 0) {
+        console.log(`✅ Roomspot found ${properties.length} properties from ${url}`);
+        return properties;
+      }
+    }
+  }
+  console.log('⚠️ Roomspot: No properties found from any URL/pattern');
+  return [];
 }
 
 async function scrapeRentberry(): Promise<Property[]> {
-  return await scrapeGeneric({
-    url: 'https://rentberry.com/s/groningen',
-    source: 'rentberry',
-    linkPattern: /href="([^"]*\/apartment\/[^"]+)"/g,
-    typeDefault: 'apartment'
-  });
+  console.log('🏠 Starting Rentberry scraper...');
+  const urls = [
+    'https://rentberry.com/s/groningen',
+    'https://www.rentberry.com/apartment-rentals/groningen',
+    'https://rentberry.com/apartment-rentals/netherlands/groningen'
+  ];
+  
+  const patterns = [
+    /href="([^"]*\/apartment\/[^"]+)"/g,
+    /href="([^"]*\/rental\/[^"]*groningen[^"]*)"/gi,
+    /href="([^"]*\/property\/[^"]+)"/g
+  ];
+  
+  for (const url of urls) {
+    for (const linkPattern of patterns) {
+      const properties = await scrapeGeneric({
+        url,
+        source: 'rentberry',
+        linkPattern,
+        typeDefault: 'apartment'
+      });
+      if (properties.length > 0) {
+        console.log(`✅ Rentberry found ${properties.length} properties from ${url}`);
+        return properties;
+      }
+    }
+  }
+  console.log('⚠️ Rentberry: No properties found from any URL/pattern');
+  return [];
 }
 
 // Property saving with enhanced validation
@@ -716,6 +962,19 @@ serve(async (req) => {
         
       } catch (error) {
         console.error(`❌ Error scraping ${name}:`, error);
+        
+        // Update log with error status
+        if (logId) {
+          await supabase
+            .from('scraping_logs')
+            .update({
+              status: 'error',
+              error_message: error.message,
+              completed_at: new Date().toISOString()
+            })
+            .eq('id', logId);
+        }
+        
         results[name] = {
           success: false,
           error: error.message,

@@ -247,13 +247,16 @@ serve(async (req) => {
     let properties: Property[] = [];
 
     if (scraperTest) {
-      console.log('🧪 SCRAPER TEST MODE: Finding most recent property per source...');
+      console.log('🧪 SCRAPER TEST MODE: Testing all scrapers with most recent properties...');
       
       // Get the most recent property from each source for testing
-      const sources = ['pararius', 'kamernet', 'grunoverhuur', 'funda', 'campusgroningen', 'rotsvast', 'expatrentalsholland', 'vandermeulen', 'housinganywhere', 'dcwonen', 'huure', 'maxxhuren', 'kpmakelaars', 'househunting', 'woldringverhuur', '050vastgoed', 'pandomo'];
+      const allSources = ['pararius', 'kamernet', 'grunoverhuur', 'funda', 'campusgroningen', 'rotsvast', 'expatrentalsholland', 'vandermeulen', 'housinganywhere', 'studenthousing', 'roomspot', 'rentberry'];
       
-      for (const source of sources) {
-        const { data: sourceProperties } = await supabase
+      for (const source of allSources) {
+        console.log(`🔍 Testing source: ${source}`);
+        
+        // Try to get the most recent property from this source
+        const { data: sourceProperties, error: sourceError } = await supabase
           .from('properties')
           .select('*')
           .eq('source', source)
@@ -261,15 +264,32 @@ serve(async (req) => {
           .order('first_seen_at', { ascending: false })
           .limit(1);
         
+        if (sourceError) {
+          console.log(`❌ ${source}: Database error - ${sourceError.message}`);
+          continue;
+        }
+        
         if (sourceProperties && sourceProperties.length > 0) {
-          properties.push(sourceProperties[0]);
-          console.log(`✅ ${source}: Found test property - ${sourceProperties[0].title}`);
+          const property = sourceProperties[0];
+          
+          // Extra validation to ensure the property is good for testing
+          if (property.title && 
+              !property.title.includes('_IS_MISSING') && 
+              property.title.length >= 5 &&
+              property.url &&
+              (!property.price || (property.price >= 200 && property.price <= 5000))) {
+            
+            properties.push(property);
+            console.log(`✅ ${source}: Found valid test property - "${property.title}" (€${property.price || 'N/A'})`);
+          } else {
+            console.log(`⚠️ ${source}: Property found but failed validation - "${property.title}"`);
+          }
         } else {
-          console.log(`❌ ${source}: No properties found`);
+          console.log(`❌ ${source}: No properties found in database`);
         }
       }
       
-      console.log(`🧪 Scraper test mode: Found ${properties.length} test properties`);
+      console.log(`🧪 Scraper test mode: Found ${properties.length} valid test properties from ${allSources.length} sources`);
     } else {
       // Get properties from the specified time window
       const cutoffTime = new Date();
