@@ -18,17 +18,31 @@ export default function HuntPage() {
     location: "",
     minPrice: "",
     maxPrice: "",
-    bedrooms: "",
-    propertyType: "Any",
-    postalCodes: ""
+    minBedrooms: "",
+    maxBedrooms: "",
+    propertyTypes: [] as string[],
+    postalCodes: "",
+    minSize: "",
+    furnishing: [] as string[]
   });
   const [loading, setLoading] = useState(false);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [loadingAlerts, setLoadingAlerts] = useState(false);
   const [notificationsPaused, setNotificationsPaused] = useState(false);
 
-  const handleInputChange = (field: string, value: string) => {
+  const handleInputChange = (field: string, value: string | string[]) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleCheckboxChange = (field: string, value: string, checked: boolean) => {
+    setFormData(prev => {
+      const currentArray = prev[field as keyof typeof prev] as string[];
+      if (checked) {
+        return { ...prev, [field]: [...currentArray, value] };
+      } else {
+        return { ...prev, [field]: currentArray.filter(item => item !== value) };
+      }
+    });
   };
 
   const handleStartMonitoring = async () => {
@@ -50,8 +64,9 @@ export default function HuntPage() {
         name: `${formData.location || "Any Location"} Search`,
         min_price: formData.minPrice ? parseFloat(formData.minPrice) : null,
         max_price: formData.maxPrice ? parseFloat(formData.maxPrice) : null,
-        min_bedrooms: formData.bedrooms ? parseInt(formData.bedrooms) : null,
-        property_types: formData.propertyType !== "Any" ? [formData.propertyType.toLowerCase()] : null,
+        min_bedrooms: formData.minBedrooms ? parseInt(formData.minBedrooms) : null,
+        max_bedrooms: formData.maxBedrooms ? parseInt(formData.maxBedrooms) : null,
+        property_types: formData.propertyTypes.length > 0 ? formData.propertyTypes.map(t => t.toLowerCase()) : null,
         cities: formData.location ? [formData.location] : null,
         postal_codes: formData.postalCodes ? formData.postalCodes.split(/[,\s]+/).filter(Boolean) : null,
       };
@@ -72,9 +87,12 @@ export default function HuntPage() {
         location: "",
         minPrice: "",
         maxPrice: "",
-        bedrooms: "",
-        propertyType: "Any",
-        postalCodes: ""
+        minBedrooms: "",
+        maxBedrooms: "",
+        propertyTypes: [],
+        postalCodes: "",
+        minSize: "",
+        furnishing: []
       });
 
     } catch (error) {
@@ -231,30 +249,73 @@ export default function HuntPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="bedrooms">Min Bedrooms</Label>
+                <Label htmlFor="min-bedrooms">Min Bedrooms</Label>
                 <Input 
-                  id="bedrooms" 
+                  id="min-bedrooms" 
                   type="number" 
-                  placeholder="2" 
+                  placeholder="1" 
                   min="1"
-                  value={formData.bedrooms}
-                  onChange={(e) => handleInputChange("bedrooms", e.target.value)}
+                  value={formData.minBedrooms}
+                  onChange={(e) => handleInputChange("minBedrooms", e.target.value)}
                 />
               </div>
               <div>
-                <Label htmlFor="property-type">Property Type</Label>
-                <select 
-                  className="w-full px-3 py-2 border border-input rounded-md"
-                  value={formData.propertyType}
-                  onChange={(e) => handleInputChange("propertyType", e.target.value)}
-                >
-                  <option>Any</option>
-                  <option>Room</option>
-                  <option>Studio</option>
-                  <option>Apartment</option>
-                  <option>House</option>
-                  <option>Flat</option>
-                </select>
+                <Label htmlFor="max-bedrooms">Max Bedrooms</Label>
+                <Input 
+                  id="max-bedrooms" 
+                  type="number" 
+                  placeholder="4" 
+                  min="1"
+                  value={formData.maxBedrooms}
+                  onChange={(e) => handleInputChange("maxBedrooms", e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="min-size">Min Size (m²)</Label>
+                <Input 
+                  id="min-size" 
+                  type="number" 
+                  placeholder="50" 
+                  min="1"
+                  value={formData.minSize}
+                  onChange={(e) => handleInputChange("minSize", e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Property Types */}
+            <div>
+              <Label>Property Types</Label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
+                {['Apartment', 'House', 'Studio', 'Room'].map(type => (
+                  <label key={type} className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.propertyTypes.includes(type)}
+                      onChange={(e) => handleCheckboxChange('propertyTypes', type, e.target.checked)}
+                      className="rounded border border-input"
+                    />
+                    <span className="text-sm">{type}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Furnishing */}
+            <div>
+              <Label>Furnishing</Label>
+              <div className="grid grid-cols-3 gap-3 mt-2">
+                {['Unfurnished', 'Semi-furnished', 'Furnished'].map(furnish => (
+                  <label key={furnish} className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.furnishing.includes(furnish)}
+                      onChange={(e) => handleCheckboxChange('furnishing', furnish, e.target.checked)}
+                      className="rounded border border-input"
+                    />
+                    <span className="text-sm">{furnish}</span>
+                  </label>
+                ))}
               </div>
             </div>
             <Button 
