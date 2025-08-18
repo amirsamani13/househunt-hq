@@ -163,8 +163,8 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
       surface_area = parseInt(surfaceMatch[1], 10);
     }
     
-    // Create external ID from URL
-    const external_id = `${source}_${url.split('/').pop() || Date.now()}`;
+    // Use URL as external_id for proper duplicate detection
+    const external_id = url;
     
     const property: Property = {
       id: crypto.randomUUID(),
@@ -672,12 +672,12 @@ serve(async (req) => {
       try {
         console.log(`\n📡 Processing ${name}...`);
         
-        // Log scraping attempt
+        // Log scraping attempt - use valid status values
         const { data: logData, error: logError } = await supabase
           .from('scraping_logs')
           .insert({
             source: name,
-            status: 'started',
+            status: 'running',
             properties_found: 0,
             new_properties: 0,
             started_at: new Date().toISOString()
@@ -699,12 +699,12 @@ serve(async (req) => {
           duplicates: duplicates
         };
         
-        // Update log
+        // Update log with correct status value
         if (logId) {
           await supabase
             .from('scraping_logs')
             .update({
-              status: 'completed',
+              status: 'success',
               properties_found: properties.length,
               new_properties: newProperties,
               completed_at: new Date().toISOString()
