@@ -191,6 +191,63 @@ export type Database = {
         }
         Relationships: []
       }
+      scraper_health: {
+        Row: {
+          backup_selectors: Json[] | null
+          backup_urls: string[] | null
+          consecutive_failures: number | null
+          consecutive_hours_zero_properties: number | null
+          created_at: string | null
+          current_selectors: Json | null
+          current_url: string | null
+          id: string
+          is_in_repair_mode: boolean | null
+          last_failure_run: string | null
+          last_repair_attempt: string | null
+          last_successful_run: string | null
+          repair_attempts: number | null
+          repair_status: string | null
+          source: string
+          updated_at: string | null
+        }
+        Insert: {
+          backup_selectors?: Json[] | null
+          backup_urls?: string[] | null
+          consecutive_failures?: number | null
+          consecutive_hours_zero_properties?: number | null
+          created_at?: string | null
+          current_selectors?: Json | null
+          current_url?: string | null
+          id?: string
+          is_in_repair_mode?: boolean | null
+          last_failure_run?: string | null
+          last_repair_attempt?: string | null
+          last_successful_run?: string | null
+          repair_attempts?: number | null
+          repair_status?: string | null
+          source: string
+          updated_at?: string | null
+        }
+        Update: {
+          backup_selectors?: Json[] | null
+          backup_urls?: string[] | null
+          consecutive_failures?: number | null
+          consecutive_hours_zero_properties?: number | null
+          created_at?: string | null
+          current_selectors?: Json | null
+          current_url?: string | null
+          id?: string
+          is_in_repair_mode?: boolean | null
+          last_failure_run?: string | null
+          last_repair_attempt?: string | null
+          last_successful_run?: string | null
+          repair_attempts?: number | null
+          repair_status?: string | null
+          source?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       scraping_logs: {
         Row: {
           completed_at: string | null

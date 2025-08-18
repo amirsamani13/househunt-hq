@@ -76,8 +76,8 @@ function extractPropertyTitle(html: string, url: string): string {
   ) : 'Property Listing';
 }
 
-// Enhanced property detail extraction with strict validation
-async function extractPropertyDetails(url: string, source: string, typeDefault: string): Promise<Property | null> {
+// Enhanced property detail extraction with strict validation and auto-repair integration
+async function extractPropertyDetails(url: string, source: string, typeDefault: string, useCustomSelectors?: any): Promise<Property | null> {
   try {
     console.log(`Fetching individual property data for: ${url}`);
     
@@ -93,6 +93,11 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
     }
     
     const html = await response.text();
+    
+    // Use custom selectors if provided by auto-repair system
+    if (useCustomSelectors?.pricePattern) {
+      console.log(`🔧 Using auto-repaired selectors for ${source}`);
+    }
     
     // Extract title with fallbacks
     let title = extractPropertyTitle(html, url);
@@ -918,6 +923,54 @@ serve(async (req) => {
       try {
         console.log(`\n📡 Processing ${name}...`);
         
+        // STEP 1: Check if auto-repair is needed for this scraper
+        const { data: healthData } = await supabase
+          .from('scraper_health')
+          .select('*')
+          .eq('source', name)
+          .single();
+
+        let shouldAttemptRepair = false;
+        if (healthData && healthData.repair_status === 'needs_repair') {
+          console.log(`🔧 ${name} needs repair, attempting auto-repair...`);
+          shouldAttemptRepair = true;
+          
+          // Call auto-repair function
+          try {
+            const repairResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/auto-repair-scraper`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ source: name, action: 'repair' })
+            });
+            
+            if (repairResponse.ok) {
+              const repairResult = await repairResponse.json();
+              if (repairResult.success) {
+                console.log(`✅ Auto-repair succeeded for ${name}`);
+                
+                // Update health status
+                await supabase
+                  .from('scraper_health')
+                  .update({
+                    repair_status: 'repaired',
+                    last_successful_run: new Date().toISOString(),
+                    consecutive_failures: 0,
+                    consecutive_hours_zero_properties: 0,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('source', name);
+              } else {
+                console.log(`❌ Auto-repair failed for ${name}: ${repairResult.error}`);
+              }
+            }
+          } catch (repairError) {
+            console.log(`❌ Auto-repair error for ${name}:`, repairError);
+          }
+        }
+        
         // Log scraping attempt - use valid status values
         const { data: logData, error: logError } = await supabase
           .from('scraping_logs')
@@ -933,16 +986,36 @@ serve(async (req) => {
 
         const logId = logData?.id;
         
+        // STEP 2: Run the scraper (potentially with repaired configuration)
         const properties = await scraper();
         const { newProperties, duplicates } = await saveProperties(supabase, properties, name);
         
         totalNewProperties += newProperties;
         
+        // STEP 3: Update health tracking based on results
+        const isHealthy = newProperties > 0 || properties.length > 0;
+        
+        await supabase
+          .from('scraper_health')
+          .update({
+            last_successful_run: isHealthy ? new Date().toISOString() : healthData?.last_successful_run,
+            last_failure_run: !isHealthy ? new Date().toISOString() : healthData?.last_failure_run,
+            consecutive_failures: isHealthy ? 0 : (healthData?.consecutive_failures || 0) + 1,
+            consecutive_hours_zero_properties: newProperties === 0 ? (healthData?.consecutive_hours_zero_properties || 0) + 1 : 0,
+            repair_status: isHealthy ? 'healthy' : 
+                          (healthData?.consecutive_hours_zero_properties || 0) >= 2 ? 'needs_repair' : 
+                          healthData?.repair_status || 'healthy',
+            updated_at: new Date().toISOString()
+          })
+          .eq('source', name);
+        
         results[name] = {
           success: true,
           total_found: properties.length,
           new_properties: newProperties,
-          duplicates: duplicates
+          duplicates: duplicates,
+          auto_repaired: shouldAttemptRepair,
+          health_status: isHealthy ? 'healthy' : 'unhealthy'
         };
         
         // Update log with correct status value
@@ -963,6 +1036,17 @@ serve(async (req) => {
       } catch (error) {
         console.error(`❌ Error scraping ${name}:`, error);
         
+        // Update health tracking for failures
+        await supabase
+          .from('scraper_health')
+          .update({
+            last_failure_run: new Date().toISOString(),
+            consecutive_failures: (healthData?.consecutive_failures || 0) + 1,
+            repair_status: (healthData?.consecutive_failures || 0) >= 2 ? 'needs_repair' : healthData?.repair_status || 'healthy',
+            updated_at: new Date().toISOString()
+          })
+          .eq('source', name);
+        
         // Update log with error status
         if (logId) {
           await supabase
@@ -979,7 +1063,8 @@ serve(async (req) => {
           success: false,
           error: error.message,
           total_found: 0,
-          new_properties: 0
+          new_properties: 0,
+          health_status: 'error'
         };
       }
     }
