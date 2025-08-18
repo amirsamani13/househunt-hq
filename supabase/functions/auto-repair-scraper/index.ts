@@ -59,6 +59,10 @@ class ScraperAutoRepair {
       return indicatorCount >= 2; // Require at least 2 indicators
       
     } catch (error) {
+      if (error.message.includes('invalid peer certificate') || error.message.includes('NotValidForName')) {
+        console.log(`❌ SSL certificate error for ${source}: ${error.message}`);
+        return false; // Mark as unhealthy for SSL issues
+      }
       console.log(`❌ URL health check error for ${source}:`, error.message);
       return false;
     }
@@ -127,6 +131,10 @@ class ScraperAutoRepair {
       return null;
       
     } catch (error) {
+      if (error.message.includes('invalid peer certificate') || error.message.includes('NotValidForName')) {
+        console.log(`❌ SSL certificate error for ${source}: ${error.message}`);
+        return null; // Can't auto-repair SSL certificate issues
+      }
       console.log(`❌ URL discovery error for ${source}:`, error.message);
       return null;
     }
@@ -192,6 +200,10 @@ class ScraperAutoRepair {
       return null;
       
     } catch (error) {
+      if (error.message.includes('invalid peer certificate') || error.message.includes('NotValidForName')) {
+        console.log(`❌ SSL certificate error for ${source}: ${error.message}`);
+        return null; // Can't auto-repair SSL certificate issues
+      }
       console.log(`❌ Selector discovery error for ${source}:`, error.message);
       return null;
     }

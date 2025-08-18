@@ -201,7 +201,7 @@ async function extractPropertyDetails(url: string, source: string, typeDefault: 
   }
 }
 
-// Generic scraper function with enhanced error handling
+// Generic scraper function with enhanced error handling and custom selectors support
 async function scrapeGeneric(opts: {
   url: string;
   source: string;
@@ -209,8 +209,9 @@ async function scrapeGeneric(opts: {
   linkPattern: RegExp;
   typeDefault: string;
   max?: number;
+  useCustomSelectors?: any;
 }): Promise<Property[]> {
-  const { url, source, linkPattern, typeDefault, max = 20 } = opts;
+  const { url, source, linkPattern, typeDefault, max = 20, useCustomSelectors } = opts;
   
   try {
     console.log(`Starting ${source} scraping...`);
@@ -229,16 +230,48 @@ async function scrapeGeneric(opts: {
     const html = await response.text();
     console.log(`📄 ${source} page fetched (${html.length} chars)`);
     
-    // Extract property URLs
-    const matches = Array.from(html.matchAll(linkPattern));
-    console.log(`🔍 Found ${matches.length} potential property URLs for ${source}`);
+    // Use custom selectors if available for link extraction
+    let uniqueUrls: string[] = [];
     
-    if (matches.length === 0) {
+    if (useCustomSelectors && useCustomSelectors.link) {
+      // Use custom CSS selectors to find links
+      const linkRegex = /<a[^>]*href="([^"]*)"[^>]*>/gi;
+      const containerRegex = useCustomSelectors.container ? 
+        new RegExp(`<[^>]*class="[^"]*${useCustomSelectors.container.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^"]*"[^>]*>(.*?)</[^>]*>`, 'gis') : 
+        null;
+      
+      if (containerRegex) {
+        const containers = Array.from(html.matchAll(containerRegex));
+        console.log(`🔍 Found ${containers.length} containers for ${source}`);
+        
+        for (const container of containers) {
+          const containerHtml = container[1];
+          const links = Array.from(containerHtml.matchAll(linkRegex));
+          for (const link of links) {
+            if (link[1].includes('/huren/kamer-') || linkPattern.test(link[1])) {
+              uniqueUrls.push(link[1]);
+            }
+          }
+        }
+      } else {
+        // Fallback to regex pattern
+        const matches = Array.from(html.matchAll(linkPattern));
+        uniqueUrls = matches.map(match => match[1]);
+      }
+    } else {
+      // Original regex-based extraction
+      const matches = Array.from(html.matchAll(linkPattern));
+      uniqueUrls = matches.map(match => match[1]);
+    }
+    
+    console.log(`🔍 Found ${uniqueUrls.length} potential property URLs for ${source}`);
+    
+    if (uniqueUrls.length === 0) {
       console.log(`❌ No ${source} links found`);
       return [];
     }
     
-    const uniqueUrls = Array.from(new Set(matches.map(match => match[1]))).slice(0, max);
+    uniqueUrls = Array.from(new Set(uniqueUrls)).slice(0, max);
     console.log(`📋 Processing ${uniqueUrls.length} unique URLs for ${source}`);
     
     const properties: Property[] = [];
@@ -274,17 +307,35 @@ async function scrapeGeneric(opts: {
   }
 }
 
-// ENHANCED KAMERNET SCRAPER - Complete rewrite
+// Enhanced Kamernet scraper with custom selectors support
 async function scrapeKamernet(): Promise<Property[]> {
-  try {
-    console.log('🔍 Starting ENHANCED Kamernet scraper...');
-    
-    // Try multiple Kamernet URL approaches
-    const urls = [
-      'https://kamernet.nl/en/for-rent/properties-groningen',
-      'https://kamernet.nl/huren/kamer-groningen',
-      'https://kamernet.nl/en/for-rent/room-groningen'
-    ];
+  console.log('🏠 Starting Kamernet scraper with custom selectors...');
+  
+  // Get custom selectors from database
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  );
+  
+  const { data: healthData } = await supabase
+    .from('scraper_health')
+    .select('current_selectors, current_url')
+    .eq('source', 'kamernet')
+    .single();
+  
+  const customSelectors = healthData?.current_selectors;
+  const customUrl = healthData?.current_url || 'https://kamernet.nl/huren/kamer-groningen';
+  
+  console.log(`📋 Using custom URL: ${customUrl}`);
+  console.log(`📋 Using custom selectors:`, customSelectors);
+
+  // Multiple URL patterns to try
+  const urls = [
+    customUrl,
+    'https://kamernet.nl/huren/kamer-groningen',
+    'https://kamernet.nl/huren/groningen',
+    'https://kamernet.nl/en/for-rent/room-groningen'
+  ];
     
     for (const url of urls) {
       console.log(`📡 Trying Kamernet URL: ${url}`);
@@ -931,7 +982,7 @@ serve(async (req) => {
           .single();
 
         let shouldAttemptRepair = false;
-        if (healthData && healthData.repair_status === 'needs_repair') {
+        if (healthData && (healthData.is_in_repair_mode || healthData.consecutive_failures >= 3)) {
           console.log(`🔧 ${name} needs repair, attempting auto-repair...`);
           shouldAttemptRepair = true;
           
@@ -955,10 +1006,11 @@ serve(async (req) => {
                 await supabase
                   .from('scraper_health')
                   .update({
-                    repair_status: 'repaired',
+                    is_in_repair_mode: false,
                     last_successful_run: new Date().toISOString(),
                     consecutive_failures: 0,
                     consecutive_hours_zero_properties: 0,
+                    repair_attempts: 0,
                     updated_at: new Date().toISOString()
                   })
                   .eq('source', name);
@@ -1002,9 +1054,7 @@ serve(async (req) => {
             last_failure_run: !isHealthy ? new Date().toISOString() : healthData?.last_failure_run,
             consecutive_failures: isHealthy ? 0 : (healthData?.consecutive_failures || 0) + 1,
             consecutive_hours_zero_properties: newProperties === 0 ? (healthData?.consecutive_hours_zero_properties || 0) + 1 : 0,
-            repair_status: isHealthy ? 'healthy' : 
-                          (healthData?.consecutive_hours_zero_properties || 0) >= 2 ? 'needs_repair' : 
-                          healthData?.repair_status || 'healthy',
+            is_in_repair_mode: !isHealthy && (healthData?.consecutive_hours_zero_properties || 0) >= 2,
             updated_at: new Date().toISOString()
           })
           .eq('source', name);
@@ -1037,12 +1087,18 @@ serve(async (req) => {
         console.error(`❌ Error scraping ${name}:`, error);
         
         // Update health tracking for failures
+        const { data: currentHealthData } = await supabase
+          .from('scraper_health')
+          .select('*')
+          .eq('source', name)
+          .single();
+          
         await supabase
           .from('scraper_health')
           .update({
             last_failure_run: new Date().toISOString(),
-            consecutive_failures: (healthData?.consecutive_failures || 0) + 1,
-            repair_status: (healthData?.consecutive_failures || 0) >= 2 ? 'needs_repair' : healthData?.repair_status || 'healthy',
+            consecutive_failures: (currentHealthData?.consecutive_failures || 0) + 1,
+            is_in_repair_mode: (currentHealthData?.consecutive_failures || 0) >= 2,
             updated_at: new Date().toISOString()
           })
           .eq('source', name);
