@@ -961,10 +961,7 @@ serve(async (req) => {
       { name: 'rotsvast', scraper: scrapeRotsvast },
       { name: 'expatrentalsholland', scraper: scrapeExpatRentalHolland },
       { name: 'vandermeulen', scraper: scrapeVanderMeulen },
-      { name: 'housinganywhere', scraper: scrapeHousingAnywhere },
-      { name: 'studenthousing', scraper: scrapeStudentHousing },
-      { name: 'roomspot', scraper: scrapeRoomspot },
-      { name: 'rentberry', scraper: scrapeRentberry }
+      { name: 'housinganywhere', scraper: scrapeHousingAnywhere }
     ];
 
     const results: Record<string, any> = {};
