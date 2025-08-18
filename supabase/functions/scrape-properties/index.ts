@@ -461,9 +461,8 @@ async function scrapeKamernet(): Promise<Property[]> {
   }
   
   console.error('❌ All Kamernet approaches failed - no properties found');
-      return [];
-    }
-    
+  return [];
+  
   } catch (error) {
     console.error('❌ CRITICAL Kamernet error:', error);
     return [];
