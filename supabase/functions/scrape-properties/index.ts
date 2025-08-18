@@ -311,6 +311,8 @@ async function scrapeGeneric(opts: {
 async function scrapeKamernet(): Promise<Property[]> {
   console.log('🏠 Starting Kamernet scraper with custom selectors...');
   
+  try {
+  
   // Get custom selectors from database
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
