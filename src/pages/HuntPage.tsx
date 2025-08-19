@@ -3,27 +3,32 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, MapPin, DollarSign, Home, Bed, Bath, Car } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import AlertDashboard from "@/components/AlertDashboard";
+import PropertyFeed from "@/components/PropertyFeed";
 
 export default function HuntPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
   const [formData, setFormData] = useState({
-    location: "",
+    name: "",
+    cities: "",
     minPrice: "",
     maxPrice: "",
     minBedrooms: "",
     maxBedrooms: "",
+    minSurfaceArea: "",
     propertyTypes: [] as string[],
-    postalCodes: "",
-    minSize: "",
-    furnishing: [] as string[]
+    furnishing: [] as string[],
+    sources: ['funda', 'pararius', 'kamernet', 'rotsvast'] as string[]
   });
   const [loading, setLoading] = useState(false);
   const [alerts, setAlerts] = useState<any[]>([]);
@@ -61,14 +66,16 @@ export default function HuntPage() {
     try {
       const alertData = {
         user_id: user.id,
-        name: `${formData.location || "Any Location"} Search`,
+        name: formData.name || `${formData.cities || "Any Location"} Search`,
         min_price: formData.minPrice ? parseFloat(formData.minPrice) : null,
         max_price: formData.maxPrice ? parseFloat(formData.maxPrice) : null,
         min_bedrooms: formData.minBedrooms ? parseInt(formData.minBedrooms) : null,
         max_bedrooms: formData.maxBedrooms ? parseInt(formData.maxBedrooms) : null,
-        property_types: formData.propertyTypes.length > 0 ? formData.propertyTypes.map(t => t.toLowerCase()) : null,
-        cities: formData.location ? [formData.location] : null,
-        postal_codes: formData.postalCodes ? formData.postalCodes.split(/[,\s]+/).filter(Boolean) : null,
+        min_surface_area: formData.minSurfaceArea ? parseInt(formData.minSurfaceArea) : null,
+        property_types: formData.propertyTypes.length > 0 ? formData.propertyTypes : null,
+        furnishing: formData.furnishing.length > 0 ? formData.furnishing : null,
+        cities: formData.cities ? formData.cities.split(',').map(c => c.trim()).filter(Boolean) : null,
+        sources: formData.sources.length > 0 ? formData.sources : null,
       };
 
       const { error } = await supabase
@@ -84,15 +91,16 @@ export default function HuntPage() {
 
       // Reset form
       setFormData({
-        location: "",
+        name: "",
+        cities: "",
         minPrice: "",
         maxPrice: "",
         minBedrooms: "",
         maxBedrooms: "",
+        minSurfaceArea: "",
         propertyTypes: [],
-        postalCodes: "",
-        minSize: "",
-        furnishing: []
+        furnishing: [],
+        sources: ['funda', 'pararius', 'kamernet', 'rotsvast']
       });
 
     } catch (error) {
@@ -200,135 +208,230 @@ export default function HuntPage() {
       </header>
 
       <div className="container mx-auto px-4 py-8">
-        {/* Search Form */}
-        <Card className="mb-8 shadow-lg">
-          <CardHeader>
-            <CardTitle>Set Up Your Property Alerts</CardTitle>
-            <CardDescription>
-              Configure your search criteria and we'll notify you instantly when matching properties become available
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="location">Location</Label>
-                <Input 
-                  id="location" 
-                  placeholder="City, neighborhood, or zip code"
-                  value={formData.location}
-                  onChange={(e) => handleInputChange("location", e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="postal-codes">Postcodes/Neighborhoods (comma or space separated)</Label>
-                <Input 
-                  id="postal-codes" 
-                  placeholder="e.g. 9711 AA, Oosterpoort, 9722"
-                  value={formData.postalCodes}
-                  onChange={(e) => handleInputChange("postalCodes", e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="min-price">Min Price</Label>
-                <Input 
-                  id="min-price" 
-                  type="number" 
-                  placeholder="100000"
-                  value={formData.minPrice}
-                  onChange={(e) => handleInputChange("minPrice", e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="max-price">Max Price</Label>
-                <Input 
-                  id="max-price" 
-                  type="number" 
-                  placeholder="500000"
-                  value={formData.maxPrice}
-                  onChange={(e) => handleInputChange("maxPrice", e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="min-bedrooms">Min Bedrooms</Label>
-                <Input 
-                  id="min-bedrooms" 
-                  type="number" 
-                  placeholder="1" 
-                  min="1"
-                  value={formData.minBedrooms}
-                  onChange={(e) => handleInputChange("minBedrooms", e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="max-bedrooms">Max Bedrooms</Label>
-                <Input 
-                  id="max-bedrooms" 
-                  type="number" 
-                  placeholder="4" 
-                  min="1"
-                  value={formData.maxBedrooms}
-                  onChange={(e) => handleInputChange("maxBedrooms", e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="min-size">Min Size (m²)</Label>
-                <Input 
-                  id="min-size" 
-                  type="number" 
-                  placeholder="50" 
-                  min="1"
-                  value={formData.minSize}
-                  onChange={(e) => handleInputChange("minSize", e.target.value)}
-                />
-              </div>
-            </div>
+        <Tabs defaultValue="create" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="create">Create Alert</TabsTrigger>
+            <TabsTrigger value="alerts">My Alerts</TabsTrigger>
+            <TabsTrigger value="feed">Property Feed</TabsTrigger>
+          </TabsList>
 
-            {/* Property Types */}
-            <div>
-              <Label>Property Types</Label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
-                {['Apartment', 'House', 'Studio', 'Room'].map(type => (
-                  <label key={type} className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.propertyTypes.includes(type)}
-                      onChange={(e) => handleCheckboxChange('propertyTypes', type, e.target.checked)}
-                      className="rounded border border-input"
-                    />
-                    <span className="text-sm">{type}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+          <TabsContent value="create" className="space-y-6">
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle>Create Your Property Alert</CardTitle>
+                <CardDescription>
+                  Configure your search criteria and we'll notify you instantly when matching properties become available
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={(e) => { e.preventDefault(); handleStartMonitoring(); }}>
+                  <div className="grid gap-6">
+                    <div>
+                      <label htmlFor="alertName" className="block text-sm font-medium mb-1">
+                        Alert Name
+                      </label>
+                      <Input
+                        id="alertName"
+                        placeholder="e.g., Central Amsterdam Apartment"
+                        value={formData.name}
+                        onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                      />
+                    </div>
 
-            {/* Furnishing */}
-            <div>
-              <Label>Furnishing</Label>
-              <div className="grid grid-cols-3 gap-3 mt-2">
-                {['Unfurnished', 'Semi-furnished', 'Furnished'].map(furnish => (
-                  <label key={furnish} className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.furnishing.includes(furnish)}
-                      onChange={(e) => handleCheckboxChange('furnishing', furnish, e.target.checked)}
-                      className="rounded border border-input"
-                    />
-                    <span className="text-sm">{furnish}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <Button 
-              variant="hero" 
-              size="lg" 
-              className="w-full"
-              onClick={handleStartMonitoring}
-              disabled={loading}
-            >
-              {loading ? "Creating Alert..." : "Start Monitoring Properties"}
-            </Button>
-          </CardContent>
-        </Card>
+                    {/* Location Section */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold">Location</h3>
+                      <div>
+                        <label htmlFor="cities" className="block text-sm font-medium mb-1">
+                          Cities (comma-separated)
+                        </label>
+                        <Input
+                          id="cities"
+                          placeholder="Amsterdam, Rotterdam, Utrecht, Groningen"
+                          value={formData.cities}
+                          onChange={(e) => setFormData(prev => ({ ...prev, cities: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Price Section */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold">Price Range</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="minPrice" className="block text-sm font-medium mb-1">
+                            Min Price (€/month)
+                          </label>
+                          <Input
+                            id="minPrice"
+                            type="number"
+                            placeholder="500"
+                            value={formData.minPrice}
+                            onChange={(e) => setFormData(prev => ({ ...prev, minPrice: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="maxPrice" className="block text-sm font-medium mb-1">
+                            Max Price (€/month)
+                          </label>
+                          <Input
+                            id="maxPrice"
+                            type="number"
+                            placeholder="2000"
+                            value={formData.maxPrice}
+                            onChange={(e) => setFormData(prev => ({ ...prev, maxPrice: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Property Details Section */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold">Property Details</h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="minBedrooms" className="block text-sm font-medium mb-1">
+                            Min Bedrooms
+                          </label>
+                          <Input
+                            id="minBedrooms"
+                            type="number"
+                            placeholder="1"
+                            value={formData.minBedrooms}
+                            onChange={(e) => setFormData(prev => ({ ...prev, minBedrooms: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="maxBedrooms" className="block text-sm font-medium mb-1">
+                            Max Bedrooms
+                          </label>
+                          <Input
+                            id="maxBedrooms"
+                            type="number"
+                            placeholder="3"
+                            value={formData.maxBedrooms}
+                            onChange={(e) => setFormData(prev => ({ ...prev, maxBedrooms: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="minSurfaceArea" className="block text-sm font-medium mb-1">
+                          Min Surface Area (m²)
+                        </label>
+                        <Input
+                          id="minSurfaceArea"
+                          type="number"
+                          placeholder="50"
+                          value={formData.minSurfaceArea}
+                          onChange={(e) => setFormData(prev => ({ ...prev, minSurfaceArea: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="block text-sm font-medium">Property Types</label>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {['apartment', 'house', 'studio', 'room'].map((type) => (
+                            <label key={type} className="flex items-center space-x-2 cursor-pointer">
+                              <Checkbox
+                                checked={formData.propertyTypes.includes(type)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      propertyTypes: [...prev.propertyTypes, type]
+                                    }));
+                                  } else {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      propertyTypes: prev.propertyTypes.filter(t => t !== type)
+                                    }));
+                                  }
+                                }}
+                              />
+                              <span className="text-sm capitalize">{type}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="block text-sm font-medium">Furnishing</label>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          {['unfurnished', 'semi-furnished', 'furnished'].map((furnishing) => (
+                            <label key={furnishing} className="flex items-center space-x-2 cursor-pointer">
+                              <Checkbox
+                                checked={formData.furnishing.includes(furnishing)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      furnishing: [...prev.furnishing, furnishing]
+                                    }));
+                                  } else {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      furnishing: prev.furnishing.filter(f => f !== furnishing)
+                                    }));
+                                  }
+                                }}
+                              />
+                              <span className="text-sm capitalize">{furnishing.replace('-', ' ')}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sources Section */}
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold">Sources to Monitor</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {[
+                          'funda', 'pararius', 'kamernet', 'rotsvast', 'campus-groningen',
+                          'expat-rental-holland', 'van-der-meulen', 'grunoverhuur', 'housinganywhere'
+                        ].map((source) => (
+                          <label key={source} className="flex items-center space-x-2 cursor-pointer">
+                            <Checkbox
+                              checked={formData.sources.includes(source)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    sources: [...prev.sources, source]
+                                  }));
+                                } else {
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    sources: prev.sources.filter(s => s !== source)
+                                  }));
+                                }
+                              }}
+                            />
+                            <span className="text-sm capitalize">{source.replace('-', ' ')}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <Button type="submit" className="w-full" disabled={loading}>
+                      {loading ? "Creating Alert..." : "Create Alert"}
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="alerts">
+            <AlertDashboard />
+          </TabsContent>
+
+          <TabsContent value="feed">
+            <PropertyFeed />
+          </TabsContent>
+        </Tabs>
 
         {/* Manage Alerts */}
         <Card className="mb-8">

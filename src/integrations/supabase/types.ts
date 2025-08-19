@@ -131,10 +131,13 @@ export type Database = {
           external_id: string
           features: string[] | null
           first_seen_at: string
+          furnishing: string | null
           id: string
           image_urls: string[] | null
           is_active: boolean | null
           last_updated_at: string
+          latitude: number | null
+          longitude: number | null
           postal_code: string | null
           price: number | null
           property_type: string | null
@@ -154,10 +157,13 @@ export type Database = {
           external_id: string
           features?: string[] | null
           first_seen_at?: string
+          furnishing?: string | null
           id?: string
           image_urls?: string[] | null
           is_active?: boolean | null
           last_updated_at?: string
+          latitude?: number | null
+          longitude?: number | null
           postal_code?: string | null
           price?: number | null
           property_type?: string | null
@@ -177,10 +183,13 @@ export type Database = {
           external_id?: string
           features?: string[] | null
           first_seen_at?: string
+          furnishing?: string | null
           id?: string
           image_urls?: string[] | null
           is_active?: boolean | null
           last_updated_at?: string
+          latitude?: number | null
+          longitude?: number | null
           postal_code?: string | null
           price?: number | null
           property_type?: string | null
@@ -324,14 +333,20 @@ export type Database = {
         Row: {
           cities: string[] | null
           created_at: string
+          furnishing: string[] | null
           id: string
           is_active: boolean | null
           keywords: string[] | null
+          latitude: number | null
+          location_radius: number | null
+          longitude: number | null
           max_bedrooms: number | null
           max_price: number | null
           min_bedrooms: number | null
           min_price: number | null
+          min_surface_area: number | null
           name: string
+          notification_methods: string[] | null
           postal_codes: string[] | null
           property_types: string[] | null
           sources: string[] | null
@@ -341,14 +356,20 @@ export type Database = {
         Insert: {
           cities?: string[] | null
           created_at?: string
+          furnishing?: string[] | null
           id?: string
           is_active?: boolean | null
           keywords?: string[] | null
+          latitude?: number | null
+          location_radius?: number | null
+          longitude?: number | null
           max_bedrooms?: number | null
           max_price?: number | null
           min_bedrooms?: number | null
           min_price?: number | null
+          min_surface_area?: number | null
           name: string
+          notification_methods?: string[] | null
           postal_codes?: string[] | null
           property_types?: string[] | null
           sources?: string[] | null
@@ -358,14 +379,20 @@ export type Database = {
         Update: {
           cities?: string[] | null
           created_at?: string
+          furnishing?: string[] | null
           id?: string
           is_active?: boolean | null
           keywords?: string[] | null
+          latitude?: number | null
+          location_radius?: number | null
+          longitude?: number | null
           max_bedrooms?: number | null
           max_price?: number | null
           min_bedrooms?: number | null
           min_price?: number | null
+          min_surface_area?: number | null
           name?: string
+          notification_methods?: string[] | null
           postal_codes?: string[] | null
           property_types?: string[] | null
           sources?: string[] | null
