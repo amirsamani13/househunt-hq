@@ -3,10 +3,36 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Bell, MapPin, Heart, DollarSign, Calendar, Wifi } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 
-// Live feed data is fetched from Supabase in the component
+const notifications = [
+  {
+    id: 1,
+    title: "New 3BR House in Downtown",
+    price: "$450,000",
+    location: "123 Oak Street, Downtown",
+    time: "2 min ago",
+    status: "new",
+    image: "🏠"
+  },
+  {
+    id: 2,
+    title: "Modern Apartment with Garden",
+    price: "$320,000",
+    location: "456 Pine Ave, Riverside",
+    time: "5 min ago",
+    status: "urgent",
+    image: "🏢"
+  },
+  {
+    id: 3,
+    title: "Renovated Victorian Home",
+    price: "$680,000",
+    location: "789 Elm Drive, Historic District",
+    time: "12 min ago",
+    status: "featured",
+    image: "🏡"
+  }
+];
 
 const stats = [
   { label: "Active Searches", value: "8", icon: Bell },
@@ -16,39 +42,6 @@ const stats = [
 ];
 
 export const Dashboard = () => {
-  const [properties, setProperties] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchProps = async () => {
-      const { data, error } = await supabase
-        .from('properties')
-        .select('id,title,price,address,first_seen_at,source,url,city,image_urls')
-        .eq('is_active', true)
-        .order('first_seen_at', { ascending: false })
-        .limit(10);
-      if (!error) setProperties(data || []);
-      setLoading(false);
-    };
-    fetchProps();
-  }, []);
-
-  const formatPrice = (value: any) => {
-    if (value == null) return 'Price on request';
-    const num = typeof value === 'number' ? value : parseFloat(value);
-    return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
-  };
-
-  const timeAgo = (iso?: string) => {
-    if (!iso) return '';
-    const diff = Date.now() - new Date(iso).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 60) return `${mins} min ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs} h ago`;
-    const days = Math.floor(hrs / 24);
-    return `${days} d ago`;
-  };
   return (
     <section id="how-it-works" className="py-24 bg-gradient-to-b from-gray-50 to-white">
       <div className="container mx-auto px-4">
@@ -102,46 +95,41 @@ export const Dashboard = () => {
             </CardHeader>
             <CardContent className="p-0">
               <div className="space-y-0">
-                {loading ? (
-                  <div className="p-4 text-muted-foreground">Loading live properties...</div>
-                ) : properties.length === 0 ? (
-                  <div className="p-4 text-muted-foreground">No recent properties found.</div>
-                ) : (
-                  properties.map((p) => (
-                    <div 
-                      key={p.id}
-                      className="flex items-center p-4 border-b last:border-b-0 hover:bg-gray-50/50 transition-colors duration-200"
-                    >
-                      <div className="text-3xl mr-4">🏠</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <h4 className="font-semibold text-foreground truncate">{p.title}</h4>
-                          <Badge variant="secondary" className="ml-2 flex-shrink-0">
-                            {p.source}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center text-sm text-muted-foreground mb-2">
-                          <MapPin className="w-4 h-4 mr-1" />
-                          <span className="truncate">{p.address || p.city || 'Groningen'}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center">
-                            <DollarSign className="w-4 h-4 text-secondary mr-1" />
-                            <span className="font-semibold text-secondary">{formatPrice(p.price)}</span>
-                          </div>
-                          <span className="text-xs text-muted-foreground">{timeAgo(p.first_seen_at)}</span>
-                        </div>
+                {notifications.map((notification, index) => (
+                  <div 
+                    key={notification.id}
+                    className="flex items-center p-4 border-b last:border-b-0 hover:bg-gray-50/50 transition-colors duration-200"
+                  >
+                    <div className="text-3xl mr-4">{notification.image}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="font-semibold text-foreground truncate">{notification.title}</h4>
+                        <Badge 
+                          variant={notification.status === "urgent" ? "destructive" : "secondary"}
+                          className="ml-2 flex-shrink-0"
+                        >
+                          {notification.status}
+                        </Badge>
                       </div>
-                      <div className="ml-4 flex-shrink-0">
-                        <a href={p.url} target="_blank" rel="noopener noreferrer">
-                          <Button size="sm" variant="outline">
-                            View Details
-                          </Button>
-                        </a>
+                      <div className="flex items-center text-sm text-muted-foreground mb-2">
+                        <MapPin className="w-4 h-4 mr-1" />
+                        <span className="truncate">{notification.location}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <DollarSign className="w-4 h-4 text-secondary mr-1" />
+                          <span className="font-semibold text-secondary">{notification.price}</span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">{notification.time}</span>
                       </div>
                     </div>
-                  ))
-                )}
+                    <div className="ml-4 flex-shrink-0">
+                      <Button size="sm" variant="outline">
+                        View Details
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>

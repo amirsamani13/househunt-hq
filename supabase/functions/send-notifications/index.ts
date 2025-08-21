@@ -25,7 +25,6 @@ interface UserAlert {
   max_bedrooms?: number;
   property_types?: string[];
   postal_codes?: string[];
-  cities?: string[];
   sources?: string[];
   keywords?: string[];
   is_active: boolean;
@@ -44,71 +43,63 @@ interface Property {
   bedrooms?: number;
   bathrooms?: number;
   surface_area?: number;
-  city?: string;
   url: string;
   first_seen_at: string;
 }
 
-function normalizeType(t?: string): string | undefined {
-  if (!t) return undefined;
-  const v = t.toLowerCase();
-  if (v === 'flat') return 'apartment';
-  if (v === 'apt') return 'apartment';
-  if (v.includes('apartment')) return 'apartment';
-  if (v.includes('studio')) return 'studio';
-  if (v.includes('room')) return 'room';
-  if (v.includes('house')) return 'house';
-  return v;
-}
-
 function matchesAlert(property: Property, alert: UserAlert): boolean {
-  // Price range
-  if (alert.min_price && property.price && property.price < alert.min_price) return false;
-  if (alert.max_price && property.price && property.price > alert.max_price) return false;
-
-  // Bedrooms
-  if (alert.min_bedrooms && property.bedrooms && property.bedrooms < alert.min_bedrooms) return false;
-  if (alert.max_bedrooms && property.bedrooms && property.bedrooms > alert.max_bedrooms) return false;
-
-  // Property types (normalize synonyms: flat -> apartment)
-  if (alert.property_types && alert.property_types.length > 0) {
-    const wanted = alert.property_types.map(normalizeType).filter(Boolean) as string[];
-    const got = normalizeType(property.property_type);
-    if (got && !wanted.includes(got)) return false;
+  // Check price range
+  if (alert.min_price && property.price && property.price < alert.min_price) {
+    return false;
   }
-
-  // Sources
+  if (alert.max_price && property.price && property.price > alert.max_price) {
+    return false;
+  }
+  
+  // Check bedrooms
+  if (alert.min_bedrooms && property.bedrooms && property.bedrooms < alert.min_bedrooms) {
+    return false;
+  }
+  if (alert.max_bedrooms && property.bedrooms && property.bedrooms > alert.max_bedrooms) {
+    return false;
+  }
+  
+  // Check property types
+  if (alert.property_types && alert.property_types.length > 0 && property.property_type) {
+    if (!alert.property_types.includes(property.property_type)) {
+      return false;
+    }
+  }
+  
+  // Check sources
   if (alert.sources && alert.sources.length > 0) {
-    if (!alert.sources.includes(property.source)) return false;
+    if (!alert.sources.includes(property.source)) {
+      return false;
+    }
   }
-
-  // City-level filtering
-  if (alert.cities && alert.cities.length > 0) {
-    const cityMatch = alert.cities.some(c => {
-      const cLower = c.toLowerCase();
-      return (property.city && property.city.toLowerCase().includes(cLower)) ||
-             (property.address && property.address.toLowerCase().includes(cLower));
-    });
-    if (!cityMatch) return false;
+  
+  // Check postal codes
+  if (alert.postal_codes && alert.postal_codes.length > 0 && property.postal_code) {
+    const matches = alert.postal_codes.some(code => 
+      property.postal_code?.toLowerCase().includes(code.toLowerCase()) ||
+      property.address?.toLowerCase().includes(code.toLowerCase())
+    );
+    if (!matches) {
+      return false;
+    }
   }
-
-  // Postal codes or neighborhoods in address
-  if (alert.postal_codes && alert.postal_codes.length > 0) {
-    const matches = alert.postal_codes.some(code => {
-      const cl = code.toLowerCase();
-      return (property.postal_code && property.postal_code.toLowerCase().includes(cl)) ||
-             (property.address && property.address.toLowerCase().includes(cl));
-    });
-    if (!matches) return false;
-  }
-
-  // Keywords
+  
+  // Check keywords
   if (alert.keywords && alert.keywords.length > 0) {
-    const searchText = `${property.title} ${property.description ?? ''} ${property.address ?? ''}`.toLowerCase();
-    const matches = alert.keywords.some(keyword => searchText.includes(keyword.toLowerCase()));
-    if (!matches) return false;
+    const searchText = `${property.title} ${property.description} ${property.address}`.toLowerCase();
+    const matches = alert.keywords.some(keyword => 
+      searchText.includes(keyword.toLowerCase())
+    );
+    if (!matches) {
+      return false;
+    }
   }
-
+  
   return true;
 }
 
@@ -262,9 +253,8 @@ serve(async (req) => {
     } catch (_) {
       body = null;
     }
-const windowHours = Number(body?.windowHours ?? 24);
-const onlyUserEmail: string | undefined = body?.only_user_email;
-const testAll: boolean = Boolean(body?.testAll) || body?.test === 'all';
+    const windowHours = Number(body?.windowHours ?? 24);
+    const onlyUserEmail: string | undefined = body?.only_user_email;
 
     // Optionally resolve user by email
     let userIdFilter: string | undefined;
@@ -310,14 +300,8 @@ const testAll: boolean = Boolean(body?.testAll) || body?.test === 'all';
       throw propertiesError;
     }
 
-const safeProperties = (newProperties || []).filter((p: any) => {
-  const u = String(p.url || '');
-  const title = String(p.title || '');
-  const path = u.split('?')[0].toLowerCase();
-  return u && !u.includes('?') && !path.includes('/overzicht') && !/overzicht|\?|filter|page|sort/i.test(title);
-});
+    console.log(`Found ${newProperties?.length || 0} new properties from the last ${hours} hours`);
 
-    console.log(`Found ${safeProperties.length} valid properties from the last ${hours} hours (filtered from ${newProperties?.length || 0})`);
     let notificationsSent = 0;
 
     // Process each alert against new properties
@@ -336,7 +320,7 @@ const safeProperties = (newProperties || []).filter((p: any) => {
 
       let sentForAlert = 0;
       let skipped404 = 0;
-      for (const property of safeProperties) {
+      for (const property of newProperties || []) {
         // Validate listing URL before sending
         try {
           const { ok, status } = await checkUrlAvailable(property.url);
@@ -353,17 +337,16 @@ const safeProperties = (newProperties || []).filter((p: any) => {
           console.error('Error validating property URL', property.url, e);
         }
 
-        const inTest = testAll || Boolean(body?.test);
-        const match = inTest ? true : matchesAlert(property, alert);
+        const match = body?.test ? true : matchesAlert(property, alert);
         if (!match) continue;
 
-        if (inTest) {
-          // Test mode: send without recording to DB (no de-dup). If testAll=true, send ALL within window.
+        if (body?.test) {
+          // Test mode: send without recording to DB (no de-dup), cap to a few emails
           if (userProfile?.email) {
             await sendNotifications(property, alert, userProfile);
             notificationsSent++;
             sentForAlert++;
-            if (!testAll && sentForAlert >= 3) break; // cap only when not sending all
+            if (sentForAlert >= 3) break; // avoid spamming during tests
           }
           continue;
         }
@@ -388,22 +371,10 @@ const safeProperties = (newProperties || []).filter((p: any) => {
 
         // If a row was returned, it means a new record was inserted (not ignored)
         if (inserted && inserted.length > 0) {
-          try {
-            if (userProfile?.email) {
-              await sendNotifications(property, alert, userProfile);
-            }
-            await supabase
-              .from('notifications')
-              .update({ delivery_status: 'sent', delivered_at: new Date().toISOString() })
-              .eq('id', inserted[0].id);
-            notificationsSent++;
-          } catch (e) {
-            console.error('Failed to deliver notification', e);
-            await supabase
-              .from('notifications')
-              .update({ delivery_status: 'failed', delivery_error: String(e) })
-              .eq('id', inserted[0].id);
+          if (userProfile?.email) {
+            await sendNotifications(property, alert, userProfile);
           }
+          notificationsSent++;
         } else {
           console.log(`Duplicate notification for user ${alert.user_id} and property ${property.id} — already sent.`);
         }
