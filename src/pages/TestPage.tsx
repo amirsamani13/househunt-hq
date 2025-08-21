@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { ArrowLeft, Play, Database, AlertCircle, Mail, Search, Clock, TestTube, Trash2, AlertTriangle, Loader2 } from "lucide-react";
+import { ArrowLeft, Play, Database, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export default function TestPage() {
@@ -48,744 +48,281 @@ export default function TestPage() {
           
           setResults(data);
           
-          toast({
-            title: "Scraping Complete! 🎉",
-            description: `Found ${data.totalNewProperties || 0} new properties across all sources.`,
-          });
+          // Fetch latest properties to show results
+          const { data: propertiesData, error: propertiesError } = await supabase
+            .from('properties')
+            .select('*')
+            .order('first_seen_at', { ascending: false })
+            .limit(10);
+            
+          if (propertiesError) {
+            console.error('Error fetching properties:', propertiesError);
+          } else {
+            setProperties(propertiesData || []);
+          }
           
-        } catch (err: any) {
-          console.error('Scraping error:', err);
+          toast({
+            title: "Scraping Completed!",
+            description: `Found ${data?.totalNewProperties || 0} new properties`,
+          });
+        } catch (error: any) {
+          console.error('Scraping error:', error);
           toast({
             title: "Scraping Failed",
-            description: err.message || "An error occurred during scraping.",
+            description: error.message || "Failed to scrape properties",
             variant: "destructive",
           });
         } finally {
           setIsLoading(false);
         }
-      }, 1000);
+      }, 100);
       
-    } catch (err: any) {
-      console.error('Scraping error:', err);
-      setIsLoading(false);
+    } catch (error: any) {
+      console.error('Scraping error:', error);
       toast({
         title: "Scraping Failed",
-        description: err.message || "An error occurred during scraping.",
+        description: error.message || "Failed to start scraping",
         variant: "destructive",
       });
-    }
-  };
-
-  const testScraperNotifications = async () => {
-    if (!user) {
-      toast({
-        title: "Authentication required",
-        description: "Please log in to test notifications",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      console.log('🧪 Starting SCRAPER TEST MODE...');
-      
-      const { data, error } = await supabase.functions.invoke('send-notifications', {
-        body: {
-          scraperTest: true, // This will find 1 property per source and send test emails
-          force: true,
-          windowHours: 24
-        }
-      });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      console.log('Scraper test results:', data);
-      
-      toast({
-        title: "Scraper Test Complete! 🧪",
-        description: `Sent ${data.notificationsSent || 0} test emails. Check your inbox!`,
-      });
-      
-    } catch (err: any) {
-      console.error('Scraper test error:', err);
-      toast({
-        title: "Scraper test failed",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
       setIsLoading(false);
     }
   };
 
   const fetchProperties = async () => {
-    if (!user) {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to view properties.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsLoading(true);
     try {
       const { data, error } = await supabase
         .from('properties')
         .select('*')
-        .eq('is_active', true)
         .order('first_seen_at', { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-
+        .limit(20);
+        
+      if (error) {
+        throw error;
+      }
+      
       setProperties(data || []);
       toast({
         title: "Properties Loaded",
-        description: `Found ${data?.length || 0} recent properties.`,
+        description: `Showing ${data?.length || 0} recent properties`,
       });
-    } catch (err: any) {
-      console.error('Error fetching properties:', err);
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: err.message,
+        description: error.message || "Failed to fetch properties",
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
     }
   };
-
+  // Fetch properties from the last 24 hours (all sources)
   const fetchLast24h = async () => {
-    if (!user) {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to view properties.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsLoading(true);
     try {
-      const cutoff = new Date();
-      cutoff.setHours(cutoff.getHours() - 24);
-
+      const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const { data, error } = await supabase
         .from('properties')
         .select('*')
+        .gte('first_seen_at', cutoffIso)
         .eq('is_active', true)
-        .gte('first_seen_at', cutoff.toISOString())
-        .order('first_seen_at', { ascending: false });
-
+        .order('first_seen_at', { ascending: false })
+        .limit(200);
       if (error) throw error;
-
       setProperties(data || []);
-      toast({
-        title: "24h Properties Loaded",
-        description: `Found ${data?.length || 0} properties from the last 24 hours.`,
-      });
-    } catch (err: any) {
-      console.error('Error fetching 24h properties:', err);
-      toast({
-        title: "Error",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
+      toast({ title: 'Last 24h Loaded', description: `Showing ${data?.length || 0} properties from last 24 hours` });
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message || 'Failed to fetch last 24h', variant: 'destructive' });
     }
   };
 
+  // Send notifications for last 24h to current user (send-all test)
   const sendNotifications24hAll = async () => {
     if (!user) {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to send notifications.",
-        variant: "destructive",
-      });
+      toast({ title: 'Login required', description: 'Please sign in to send test notifications', variant: 'destructive' });
       return;
     }
-
-    setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('send-notifications', {
-        body: {
-          windowHours: 24,
-          testAll: false,
-          force: false
-        }
+        body: { windowHours: 24, testAll: true, only_user_email: user.email }
       });
-
       if (error) throw error;
-
-      toast({
-        title: "Notifications Sent",
-        description: `Sent ${data.notificationsSent || 0} notifications successfully.`,
-      });
-    } catch (err: any) {
-      console.error('Error sending notifications:', err);
-      toast({
-        title: "Error",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
+      toast({ title: 'Notifications sent', description: `Result: ${data?.message || 'Done'}` });
+    } catch (error: any) {
+      toast({ title: 'Failed', description: error.message || 'Could not send notifications', variant: 'destructive' });
     }
   };
 
-  const testForceNotifications = async () => {
+  const updatePause = async (value: boolean) => {
     if (!user) {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to test notifications.",
-        variant: "destructive",
-      });
+      toast({ title: 'Authentication Required', description: 'Please log in first.', variant: 'destructive' });
       return;
     }
-
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('send-notifications', {
-        body: {
-          windowHours: 6,
-          force: true,
-          testAll: true
-        }
-      });
-
-      if (error) throw error;
-
-      toast({
-        title: "Force Test Complete!",
-        description: `Sent ${data.notificationsSent || 0} forced notifications.`,
-      });
-    } catch (err: any) {
-      console.error('Error with force notifications:', err);
-      toast({
-        title: "Error",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ notifications_paused: value })
+      .eq('user_id', user.id);
+    if (error) {
+      toast({ title: 'Error', description: 'Failed to update notification settings.', variant: 'destructive' });
+    } else {
+      toast({ title: value ? 'Notifications paused' : 'Notifications resumed' });
     }
   };
-
-  const runRepair = async () => {
-    if (!user) {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to run repair functions.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('repair-properties');
-
-      if (error) throw error;
-
-      toast({
-        title: "Data Repair Complete! 🔧",
-        description: `Scanned: ${data.scanned || 0}, Fixed: ${data.fixed || 0}, Purged: ${data.purged || 0}`,
-      });
-    } catch (err: any) {
-      console.error('Error running repair:', err);
-      toast({
-        title: "Repair Failed",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const updatePause = async () => {
-    if (!user) {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to update pause status.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // Get current pause status
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('notifications_paused')
-        .eq('user_id', user.id)
-        .single();
-
-      const newPauseStatus = !profile?.notifications_paused;
-
-      const { error } = await supabase
-        .from('profiles')
-        .update({ notifications_paused: newPauseStatus })
-        .eq('user_id', user.id);
-
-      if (error) throw error;
-
-      toast({
-        title: newPauseStatus ? "Notifications Paused" : "Notifications Resumed",
-        description: newPauseStatus 
-          ? "You won't receive property notifications until you resume them."
-          : "You'll now receive property notifications again.",
-      });
-    } catch (err: any) {
-      console.error('Error updating pause status:', err);
-      toast({
-        title: "Error",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const clearAllProperties = async () => {
-    if (!user) {
-      toast({
-        title: "Authentication Required", 
-        description: "Please log in to clear properties.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!confirm("Are you sure you want to delete ALL properties? This cannot be undone!")) {
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const { error } = await supabase
-        .from('properties')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
-
-      if (error) throw error;
-
-      toast({
-        title: "Database Cleared",
-        description: "All properties have been deleted.",
-      });
-    } catch (err: any) {
-      console.error('Error clearing properties:', err);
-      toast({
-        title: "Error",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const clearTestData = async () => {
-    if (!user) {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to clear test data.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!confirm("Clear all test/fake properties? This will remove Kamernet test data and other fake entries.")) {
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const { error } = await supabase
-        .from('properties')
-        .delete()
-        .or('external_id.like.%test%,title.like.%. Ook ligt dit huis%,url.like.%test%');
-
-      if (error) throw error;
-
-      toast({
-        title: "Test Data Cleared",
-        description: "All test/fake properties have been removed.",
-      });
-    } catch (err: any) {
-      console.error('Error clearing test data:', err);
-      toast({
-        title: "Error", 
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const clearPropertiesBySource = async (source: string) => {
-    if (!user) {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to clear properties.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!confirm(`Delete all properties from ${source}? This cannot be undone!`)) {
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const { error } = await supabase
-        .from('properties')
-        .delete()
-        .eq('source', source);
-
-      if (error) throw error;
-
-      toast({
-        title: "Properties Cleared",
-        description: `All properties from ${source} have been deleted.`,
-      });
-    } catch (err: any) {
-      console.error(`Error clearing ${source} properties:`, err);
-      toast({
-        title: "Error",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5" />
-              Authentication Required
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground mb-4">
-              Please log in to access the testing features.
-            </p>
-            <Link to="/auth">
-              <Button className="w-full">Go to Login</Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b bg-card">
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
+      <header className="border-b bg-white/80 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link to="/">
-                <Button variant="ghost" size="sm">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Dashboard
+            <Link to="/" className="flex items-center text-primary hover:text-primary/80">
+              <ArrowLeft className="w-5 h-5 mr-2" />
+              Back to Home
+            </Link>
+            <h1 className="text-2xl font-bold">Test Scraping</h1>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  onClick={fetchProperties}
+                  disabled={isLoading}
+                >
+                  <Database className="w-4 h-4 mr-2" />
+                  View Properties
                 </Button>
-              </Link>
-              <div>
-                <h1 className="text-2xl font-bold">Testing & Debugging</h1>
-                <p className="text-muted-foreground">Test scrapers, notifications, and data integrity</p>
+                <Button 
+                  variant="outline" 
+                  onClick={fetchLast24h}
+                  disabled={isLoading}
+                >
+                  <Database className="w-4 h-4 mr-2" />
+                  View Last 24h
+                </Button>
+                <Button onClick={sendNotifications24hAll} disabled={isLoading || !user}>
+                  Send 24h to Me
+                </Button>
+                <Button variant="destructive" onClick={() => updatePause(true)}>
+                  Pause notifications
+                </Button>
+                <Button variant="secondary" onClick={() => updatePause(false)}>
+                  Resume
+                </Button>
               </div>
-            </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Main Content */}
-      <div className="container mx-auto px-4 py-8 space-y-8">
-        
-        {/* Scraping & Data Collection */}
-        <Card>
+      <div className="container mx-auto px-4 py-8">
+        {/* Test Controls */}
+        <Card className="mb-8">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Search className="h-5 w-5" />
-              Scraping & Data Collection
-            </CardTitle>
+            <CardTitle>Property Scraping Test</CardTitle>
             <CardDescription>
-              Test property scrapers and data collection from various sources
+              Test the property scraping functionality for Pararius, Kamernet, and Grunoverhuur
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-4">
               <Button 
                 onClick={testScraping} 
-                disabled={isLoading}
-                className="h-16 flex flex-col gap-2"
+                disabled={isLoading || !user}
+                size="lg"
+                className="flex items-center gap-2"
               >
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-6 w-6" />}
-                <div>
-                  <div className="font-semibold">Test Scraping</div>
-                  <div className="text-xs opacity-70">Run all scrapers</div>
-                </div>
+                <Play className="w-4 h-4" />
+                {isLoading ? "Scraping..." : "Start Scraping Test"}
               </Button>
-
-              <Button 
-                onClick={testScraperNotifications} 
-                disabled={isLoading}
-                variant="secondary"
-                className="h-16 flex flex-col gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-6 w-6" />}
-                <div>
-                  <div className="font-semibold">🧪 Scraper Test</div>
-                  <div className="text-xs opacity-70">1 email per source</div>
+              
+              {!user && (
+                <div className="flex items-center gap-2 text-amber-600">
+                  <AlertCircle className="w-4 h-4" />
+                  <span className="text-sm">Please log in to test scraping</span>
                 </div>
-              </Button>
-
-              <Button 
-                onClick={fetchProperties} 
-                disabled={isLoading}
-                variant="outline"
-                className="h-16 flex flex-col gap-2"
-              >
-                <Database className="h-6 w-6" />
-                <div>
-                  <div className="font-semibold">Fetch Properties</div>
-                  <div className="text-xs opacity-70">View recent data</div>
-                </div>
-              </Button>
-
-              <Button 
-                onClick={fetchLast24h} 
-                disabled={isLoading}
-                variant="outline"
-                className="h-16 flex flex-col gap-2"
-              >
-                <Clock className="h-6 w-6" />
-                <div>
-                  <div className="font-semibold">Last 24h</div>
-                  <div className="text-xs opacity-70">Recent properties</div>
-                </div>
-              </Button>
+              )}
             </div>
+            
+            {isLoading && (
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-700">
+                  Scraping in progress... This may take 30-60 seconds as we fetch data from multiple sources.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* Notifications & Testing */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5" />
-              Notifications & Testing
-            </CardTitle>
-            <CardDescription>
-              Test notification systems and data management
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Button 
-                onClick={sendNotifications24hAll} 
-                disabled={isLoading}
-                variant="secondary"
-                className="h-16 flex flex-col gap-2"
-              >
-                <Mail className="h-6 w-6" />
-                <div>
-                  <div className="font-semibold">Send 24h Notifications</div>
-                  <div className="text-xs opacity-70">Test notification system</div>
-                </div>
-              </Button>
-
-              <Button 
-                onClick={testForceNotifications} 
-                disabled={isLoading}
-                variant="outline"
-                className="h-16 flex flex-col gap-2"
-              >
-                <TestTube className="h-6 w-6" />
-                <div>
-                  <div className="font-semibold">Force Test Notifications</div>
-                  <div className="text-xs opacity-70">Bypass all restrictions</div>
-                </div>
-              </Button>
-
-              <Button 
-                onClick={runRepair} 
-                disabled={isLoading}
-                variant="destructive"
-                className="h-16 flex flex-col gap-2"
-              >
-                <Trash2 className="h-6 w-6" />
-                <div>
-                  <div className="font-semibold">Repair & Purge Bad Data</div>
-                  <div className="text-xs opacity-70">Fix corrupted properties</div>
-                </div>
-              </Button>
-
-              <Button 
-                onClick={updatePause} 
-                disabled={isLoading}
-                variant="outline"
-                className="h-16 flex flex-col gap-2"
-              >
-                <AlertTriangle className="h-6 w-6" />
-                <div>
-                  <div className="font-semibold">Toggle Pause</div>
-                  <div className="text-xs opacity-70">Pause/resume notifications</div>
-                </div>
-              </Button>
-            </div>
-
-            {/* Database Cleanup Section */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-              <Button 
-                onClick={clearAllProperties} 
-                disabled={isLoading}
-                variant="destructive"
-                className="h-16 flex flex-col gap-2"
-              >
-                <Trash2 className="h-6 w-6" />
-                <div>
-                  <div className="font-semibold">Clear All Properties</div>
-                  <div className="text-xs opacity-70">Delete entire database</div>
-                </div>
-              </Button>
-
-              <Button 
-                onClick={clearTestData} 
-                disabled={isLoading}
-                variant="outline"
-                className="h-16 flex flex-col gap-2"
-              >
-                <TestTube className="h-6 w-6" />
-                <div>
-                  <div className="font-semibold">Clear Test Data</div>
-                  <div className="text-xs opacity-70">Remove fake/test properties</div>
-                </div>
-              </Button>
-
-              <Button 
-                onClick={() => clearPropertiesBySource('kamernet')} 
-                disabled={isLoading}
-                variant="outline"
-                className="h-16 flex flex-col gap-2"
-              >
-                <Trash2 className="h-6 w-6" />
-                <div>
-                  <div className="font-semibold">Clear Kamernet</div>
-                  <div className="text-xs opacity-70">Remove all Kamernet data</div>
-                </div>
-              </Button>
-
-              <Button 
-                onClick={() => clearPropertiesBySource('pararius')} 
-                disabled={isLoading}
-                variant="outline"
-                className="h-16 flex flex-col gap-2"
-              >
-                <Trash2 className="h-6 w-6" />
-                <div>
-                  <div className="font-semibold">Clear Pararius</div>
-                  <div className="text-xs opacity-70">Remove all Pararius data</div>
-                </div>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Results Display */}
+        {/* Results Summary */}
         {results && (
-          <Card>
+          <Card className="mb-8">
             <CardHeader>
               <CardTitle>Scraping Results</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold">Total New Properties:</span>
-                  <Badge variant="secondary">{results.totalNewProperties || 0}</Badge>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {Object.entries(results.results || {}).map(([source, result]: [string, any]) => (
-                    <Card key={source} className="p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium capitalize">{source}</span>
-                        <Badge variant={result.success ? "default" : "destructive"}>
-                          {result.success ? "✓" : "✗"}
-                        </Badge>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {Object.entries(results.results || {}).map(([source, result]: [string, any]) => (
+                  <div key={source} className="p-4 border rounded-lg">
+                    <h3 className="font-semibold capitalize mb-2">{source}</h3>
+                    {result.success ? (
+                      <div className="space-y-1">
+                        <p className="text-sm text-green-600">✓ Success</p>
+                        <p className="text-xs">Total: {result.total}</p>
+                        <p className="text-xs">New: {result.new}</p>
                       </div>
-                      <div className="text-sm space-y-1">
-                        <div>Found: {result.total_found || 0}</div>
-                        <div>New: {result.new_properties || 0}</div>
-                        {result.error && (
-                          <div className="text-destructive text-xs">{result.error}</div>
-                        )}
+                    ) : (
+                      <div>
+                        <p className="text-sm text-red-600">✗ Failed</p>
+                        <p className="text-xs text-red-500">{result.error}</p>
                       </div>
-                    </Card>
-                  ))}
-                </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              
+              <div className="mt-4 p-4 bg-green-50 rounded-lg">
+                <p className="font-semibold text-green-800">
+                  Total New Properties: {results.totalNewProperties}
+                </p>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Properties Display */}
+        {/* Properties List */}
         {properties.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle>Recent Properties ({properties.length})</CardTitle>
+              <CardDescription>
+                Latest properties from the database
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {properties.slice(0, 20).map((property) => (
-                  <div key={property.id} className="border rounded-lg p-4 space-y-2">
-                    <div className="flex items-start justify-between">
-                      <h3 className="font-semibold">{property.title}</h3>
-                      <div className="flex gap-2">
+                {properties.map((property) => (
+                  <div key={property.id} className="border rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <h3 className="font-semibold">{property.title}</h3>
+                        <p className="text-sm text-muted-foreground">{property.address}</p>
+                      </div>
+                      <div className="text-right">
                         <Badge variant="outline">{property.source}</Badge>
                         {property.price && (
-                          <Badge variant="secondary">€{property.price}</Badge>
+                          <p className="font-bold text-lg">€{property.price}</p>
                         )}
                       </div>
                     </div>
                     
-                    {property.address && (
-                      <p className="text-sm text-muted-foreground">{property.address}</p>
-                    )}
-                    
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      {property.bedrooms && <span>🛏️ {property.bedrooms} bed</span>}
-                      {property.bathrooms && <span>🚿 {property.bathrooms} bath</span>}
-                      {property.surface_area && <span>📐 {property.surface_area}m²</span>}
-                      <span>🕒 {new Date(property.first_seen_at).toLocaleDateString()}</span>
+                      {property.bedrooms && <span>{property.bedrooms} bed</span>}
+                      {property.bathrooms && <span>{property.bathrooms} bath</span>}
+                      {property.surface_area && <span>{property.surface_area}m²</span>}
+                      <span>Added: {new Date(property.first_seen_at).toLocaleString()}</span>
                     </div>
                     
-                    <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => window.open(property.url, '_blank')}
+                    <div className="mt-2">
+                      <a 
+                        href={property.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline text-sm"
                       >
-                        View Property
-                      </Button>
+                        View Original →
+                      </a>
                     </div>
                   </div>
                 ))}

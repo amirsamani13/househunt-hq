@@ -1,9 +1,10 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.52.1'
+import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
 
 interface Property {
   external_id: string;
@@ -11,271 +12,736 @@ interface Property {
   title: string;
   description?: string;
   price?: number;
-  currency?: string;
+  address?: string;
+  postal_code?: string;
+  property_type?: string;
   bedrooms?: number;
   bathrooms?: number;
   surface_area?: number;
-  address?: string;
-  city?: string;
-  postal_code?: string;
-  property_type?: string;
+  available_from?: string;
   url: string;
   image_urls?: string[];
   features?: string[];
-  available_from?: string;
+  city?: string;
 }
 
-// Dutch housing website scrapers according to your comprehensive plan
-const DUTCH_SCRAPERS = [
-  // Phase 1: Major Portals (Highest Priority)
-  { name: "Funda", url: "https://www.funda.nl/huur/groningen", source: "funda" },
-  { name: "Pararius", url: "https://www.pararius.com/apartments/groningen", source: "pararius" },
-  { name: "Kamernet", url: "https://kamernet.nl/huren/kamer-groningen", source: "kamernet" },
-  { name: "HousingAnywhere", url: "https://housinganywhere.com/s/Groningen--Netherlands", source: "housinganywhere" },
-  
-  // Phase 2: Real Estate Agencies
-  { name: "Rotsvast", url: "https://www.rotsvast.nl/huren/", source: "rotsvast" },
-  { name: "MVGM", url: "https://www.mvgm.nl/woningaanbod", source: "mvgm" },
-  
-  // Phase 3: Student & Social Housing
-  { name: "DUWO", url: "https://www.duwo.nl/aanbod", source: "duwo" },
-  { name: "SSH&", url: "https://www.sshn.nl/aanbod", source: "ssh" },
-  
-  // Phase 4: Specialized Platforms
-  { name: "Grunoverhuur", url: "https://www.grunoverhuur.nl/aanbod/huren", source: "grunoverhuur" }
-];
+// Helper function to extract text content from HTML
+function extractText(html: string): string {
+  return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
+// Helper function to extract numbers from text
+function extractNumber(text: string): number | null {
+  const match = text.match(/\d+/);
+  return match ? parseInt(match[0]) : null;
+}
+
+// Helper function to extract price
+function extractPrice(text: string): number | null {
+  const match = text.match(/€\s*(\d+(?:\.\d+)?)/);
+  return match ? parseFloat(match[1]) : null;
+}
+
+// COMMAND 3: Fixed sanitizeTitle function - more aggressive cleaning
+function sanitizeTitle(input: string): string {
+  let t = (input || '').toString();
+  
+  // Remove HTML entities
+  t = t.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  
+  // AGGRESSIVE URL cleaning - remove everything after ? or # AND any URL-like patterns
+  t = t.split('?')[0].split('#')[0];
+  t = t.replace(/[\?\&=\%].*$/g, ''); // Remove anything that looks like URL parameters
+  t = t.replace(/[A-Za-z]+=[A-Za-z0-9\%\-\+\&]+/g, ''); // Remove key=value patterns
+  
+  // Remove URL encoding artifacts
+  t = t.replace(/\%[0-9A-Fa-f]{2}/g, '');
+  t = t.replace(/forsaleorrent=\d+/gi, '');
+  t = t.replace(/localityid=\d+/gi, '');
+  t = t.replace(/locationofinterest=[^&\s]*/gi, '');
+  t = t.replace(/moveunavailablelistingstothebottom=[^&\s]*/gi, '');
+  t = t.replace(/orderby=\d+/gi, '');
+  t = t.replace(/take=\d+/gi, '');
+  t = t.replace(/filter[^&\s]*/gi, '');
+  t = t.replace(/group[^&\s]*/gi, '');
+  t = t.replace(/page=\d+/gi, '');
+  
+  // Remove obvious non-title words
+  t = t.replace(/\b(overzicht|aanbod|zoeken|filters?|page\s*\d+|sort\s*(?:newest|pricelow|pricehigh))\b/gi, '');
+  
+  // Strip brand suffixes like " - Pandomo" or " | Funda"
+  t = t.replace(/\s*[\-|–—|•]\s*(pararius|kamernet|grunoverhuur|funda|campusgroningen|rotsvast|expatrentalsholland|vandermeulen|housinganywhere|dcwonen|huure|maxxhuren|kpmakelaars|househunting|woldringverhuur|050vastgoed|pandomo)\s*$/i, '');
+  
+  // COMMAND 3: Remove alphanumeric strings like t38e404943 (8+ chars with both letters and numbers)
+  // More aggressive patterns to catch all variations
+  t = t.replace(/\b[a-zA-Z]*\d+[a-zA-Z0-9]*[a-zA-Z]+[a-zA-Z0-9]*\b/g, '');
+  t = t.replace(/\b\w*[a-zA-Z]+\d+\w*\b/g, '');
+  t = t.replace(/\b[a-z]\d{7,}\b/gi, ''); // Remove single letter followed by 7+ digits
+  t = t.replace(/\b\d{7,}[a-z]\b/gi, ''); // Remove 7+ digits followed by single letter
+  t = t.replace(/\b[a-z0-9]{8,}\b/gi, ''); // Remove any 8+ character alphanumeric strings
+  
+  // Clean up messy characters and collapse spaces
+  t = t.replace(/[^\w\s\-\,\.]/g, ' '); // Keep only word chars, spaces, dashes, commas, dots
+  t = t.replace(/\s{2,}/g, ' ').trim();
+  
+  if (!t || t.length < 3) t = 'Property in Groningen';
+  if (t.length > 200) t = t.slice(0, 200);
+  return t;
+}
+
+function sanitizeAddress(input?: string): string {
+  if (!input) return 'Groningen, Netherlands';
+  let t = String(input);
+  t = t.replace(/&amp;/g, '&');
+  t = t.split('?')[0].split('#')[0];
+  t = t.replace(/\s{2,}/g, ' ').trim();
+  if (t.length > 200) t = t.slice(0, 200);
+  return t;
+}
+
+// COMMAND 1: New helper function for extracting property details
+async function extractPropertyDetails(url: string, source: string, typeDefault: string): Promise<Property | null> {
+  try {
+    console.log(`Fetching individual property data for: ${url}`);
+    
+    const detailResp = await fetch(url, { 
+      headers: { 
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      } 
+    });
+    
+    if (!detailResp.ok) {
+      console.log(`Failed to fetch ${url}: ${detailResp.status}`);
+      return null;
+    }
+    
+    const detailHtml = await detailResp.text();
+    
+    // Initialize variables for THIS SPECIFIC property (fresh variables each time)
+    let propertyTitle = '';
+    let propertyAddress = '';
+    let propertyPrice: number | null = null;
+    let propertyBedrooms: number | null = null;
+    let propertyBathrooms: number | null = null;
+    let propertySurface: number | null = null;
+    
+    // Try JSON-LD first for structured data
+    const ldMatches = Array.from(detailHtml.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi));
+    for (const ldMatch of ldMatches) {
+      try {
+        const jsonData = JSON.parse(ldMatch[1]);
+        if (jsonData.name && !propertyTitle) propertyTitle = jsonData.name;
+        if (jsonData.address?.streetAddress && !propertyAddress) propertyAddress = jsonData.address.streetAddress;
+        if (jsonData.offers?.price && !propertyPrice) propertyPrice = parseFloat(jsonData.offers.price);
+        if (jsonData.numberOfRooms && !propertyBedrooms) propertyBedrooms = parseInt(jsonData.numberOfRooms);
+        if (jsonData.floorSize?.value && !propertySurface) propertySurface = parseFloat(jsonData.floorSize.value);
+      } catch (e) {
+        console.log(`JSON-LD parse error for ${url}:`, e);
+      }
+    }
+    
+    // Extract title from h1, h2, or title tag if not found in JSON-LD
+    if (!propertyTitle) {
+      const titlePatterns = [
+        /<h1[^>]*>([\s\S]*?)<\/h1>/i,
+        /<h2[^>]*>([\s\S]*?)<\/h2>/i,
+        /<title[^>]*>([\s\S]*?)<\/title>/i
+      ];
+      for (const pattern of titlePatterns) {
+        const match = detailHtml.match(pattern);
+        if (match) {
+          propertyTitle = extractText(match[1]);
+          break;
+        }
+      }
+    }
+    
+    // Extract address using multiple comprehensive patterns
+    if (!propertyAddress) {
+      const addrPatterns = [
+        /class=["'][^"']*(address|adres|street|location|plaats)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|h\d|p)>/i,
+        /<(?:div|span|p)[^>]*class=["'][^"']*(?:street|location|address|adres)[^"']*["'][^>]*>(.*?)<\/(?:div|span|p)>/i,
+        /(?:address|adres|locatie|plaats)\s*[:=]\s*([^<\n]+)/i,
+        /(?:straat|street|location)\s*[:=]\s*([^<\n]+)/i
+      ];
+      for (const pattern of addrPatterns) {
+        const match = detailHtml.match(pattern);
+        if (match) {
+          propertyAddress = extractText(match[2] || match[1]);
+          if (propertyAddress && propertyAddress.length > 5) break;
+        }
+      }
+    }
+    
+    // Extract price with comprehensive patterns
+    if (!propertyPrice) {
+      const pricePatterns = [
+        /(?:€|EUR|euro)\s*([\d\.,]+)/i,
+        /(?:price|prijs|huur)\s*[:=]\s*€?\s*([\d\.,]+)/i,
+        /[\s>]([\d\.,]+)\s*(?:€|euro|per)/i
+      ];
+      for (const pattern of pricePatterns) {
+        const match = detailHtml.match(pattern);
+        if (match) {
+          const cleanPrice = match[1].replace(/[.,]/g, '');
+          if (cleanPrice.length >= 3) { // At least 3 digits for realistic price
+            propertyPrice = parseInt(cleanPrice);
+            break;
+          }
+        }
+      }
+    }
+    
+    // Extract bedrooms with enhanced patterns
+    if (!propertyBedrooms) {
+      const bedroomPatterns = [
+        /(\d+)\s*(?:bed|slaap|kamer|room|bedroom)s?(?:room)?/i,
+        /(?:bed|slaap|kamer|room|bedroom)s?(?:room)?\s*[:=]?\s*(\d+)/i,
+        /(\d+)\s*slaapkamer/i,
+        /aantal\s*(?:bed|slaap|kamer)\w*\s*[:=]?\s*(\d+)/i
+      ];
+      for (const pattern of bedroomPatterns) {
+        const match = detailHtml.match(pattern);
+        if (match) {
+          const beds = parseInt(match[1]);
+          if (beds >= 1 && beds <= 10) { // Reasonable range
+            propertyBedrooms = beds;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Extract bathrooms with enhanced patterns  
+    if (!propertyBathrooms) {
+      const bathroomPatterns = [
+        /(\d+)\s*(?:bath|bad|toilet|bathroom)s?(?:room)?/i,
+        /(?:bath|bad|toilet|bathroom)s?(?:room)?\s*[:=]?\s*(\d+)/i,
+        /(\d+)\s*badkamer/i,
+        /aantal\s*(?:bad|bath|toilet)\w*\s*[:=]?\s*(\d+)/i
+      ];
+      for (const pattern of bathroomPatterns) {
+        const match = detailHtml.match(pattern);
+        if (match) {
+          const baths = parseInt(match[1]);
+          if (baths >= 1 && baths <= 5) { // Reasonable range
+            propertyBathrooms = baths;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Extract surface area with enhanced patterns
+    if (!propertySurface) {
+      const surfacePatterns = [
+        /(\d+(?:\.\d+)?)\s*m[²2]/i,
+        /(\d+(?:\.\d+)?)\s*(?:square|vierkante)\s*meter/i,
+        /(?:surface|oppervlakte|area|woonoppervlakte)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*m/i,
+        /(\d+(?:\.\d+)?)\s*m²/i,
+        /grootte\s*[:=]?\s*(\d+(?:\.\d+)?)\s*m/i
+      ];
+      for (const pattern of surfacePatterns) {
+        const match = detailHtml.match(pattern);
+        if (match) {
+          const surface = parseFloat(match[1]);
+          if (surface >= 10 && surface <= 1000) { // Reasonable range
+            propertySurface = surface;
+            break;
+          }
+        }
+      }
+    }
+    
+    console.log(`Extracted data for ${url}: title="${propertyTitle}", beds=${propertyBedrooms}, baths=${propertyBathrooms}, surface=${propertySurface}m²`);
+    
+    // Build clean title from URL segments if needed
+    if (!propertyTitle || propertyTitle.length < 5) {
+      const urlPath = url.replace(/https?:\/\/[^\/]+\//, '');
+      const segments = urlPath.split('/').filter(s => s && s.length > 2 && !s.includes('?') && !s.includes('&'));
+      const meaningful = segments.slice(-2).map(s => decodeURIComponent(s).replace(/[-_]/g, ' '));
+      propertyTitle = meaningful.join(' ').trim() || `${typeDefault} in Groningen`;
+    }
+    
+    // Clean and validate title
+    const cleanTitle = sanitizeTitle(propertyTitle);
+    const cleanAddress = sanitizeAddress(propertyAddress);
+    
+    // Final validation: reject if title still contains artifacts or is too generic
+    if (!cleanTitle || cleanTitle.length < 5 ||
+        cleanTitle.includes('?') || cleanTitle.includes('&') || cleanTitle.includes('=') || 
+        cleanTitle.toLowerCase().includes('filter') || cleanTitle.toLowerCase().includes('overzicht') ||
+        /\b[a-z0-9]{8,}\b/i.test(cleanTitle) ||
+        cleanTitle.toLowerCase() === 'property in groningen') {
+      console.log(`Rejecting property with invalid title: "${cleanTitle}"`);
+      return null;
+    }
+    
+    // Create property object with UNIQUE data for this property
+    const uniqueProperty: Property = {
+      external_id: `${source}:${url}`,
+      source,
+      title: cleanTitle,
+      description: `${typeDefault.charAt(0).toUpperCase() + typeDefault.slice(1)} in ${cleanAddress || 'Groningen'}`,
+      price: propertyPrice,
+      address: cleanAddress || 'Groningen, Netherlands',
+      property_type: typeDefault,
+      bedrooms: propertyBedrooms || (typeDefault === 'room' ? 1 : 2),
+      bathrooms: propertyBathrooms || 1,
+      surface_area: propertySurface || (typeDefault === 'room' ? 16 : 60),
+      url,
+      image_urls: [],
+      features: [],
+      city: 'Groningen'
+    };
+    
+    return uniqueProperty;
+    
+  } catch (error) {
+    console.log(`Error extracting property details for ${url}:`, error);
+    return null;
+  }
+}
+
+// COMMAND 2: Simplified scrapeGeneric function
+async function scrapeGeneric(opts: { url: string; source: string; domain?: string; linkPattern: RegExp; typeDefault: string; max?: number }): Promise<Property[]> {
+  const { url, source, domain, linkPattern, typeDefault, max = 10 } = opts;
+  console.log(`Starting ${source} scraping...`);
+  const properties: Property[] = [];
+  
+  try {
+    const resp = await fetch(url, { 
+      headers: { 
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' 
+      } 
+    });
+    
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const html = await resp.text();
+    const matches = Array.from(html.matchAll(linkPattern));
+    const seen = new Set<string>();
+    
+    console.log(`Found ${matches.length} potential property URLs for ${source}`);
+    
+    // COMMAND 2: Simplified loop - only call helper and add results
+    for (let i = 0; i < matches.length && properties.length < max; i++) {
+      const href = matches[i][1];
+      if (!href || href.includes('?') || href.includes('&')) continue; // Skip URLs with query parameters
+      
+      const fullUrl = href.startsWith('http') ? href : `${domain ?? new URL(url).origin}${href}`;
+      if (seen.has(fullUrl)) continue; 
+      seen.add(fullUrl);
+      
+      // Call the new helper function for each URL
+      const propertyObject = await extractPropertyDetails(fullUrl, source, typeDefault);
+      
+      // Check the result and add it to the array
+      if (propertyObject) {
+        properties.push(propertyObject);
+        console.log(`Successfully added ${source} property: ${propertyObject.title}`);
+      }
+    }
+    
+  } catch (error) {
+    console.error(`Error scraping ${source}:`, error);
+  }
+  
+  console.log(`${source} scraping completed. Found ${properties.length} valid properties.`);
+  return properties;
+}
+
+// COMMAND 4: Fixed CampusGroningen scraper - only match /woning/ URLs
+async function scrapeCampusGroningen(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.campusgroningen.nl/en/rentals',
+    source: 'campusgroningen',
+    linkPattern: /href="(\/woning\/[^"]+)"/g, // COMMAND 4: Only match /woning/ paths
+    typeDefault: 'room'
+  });
+}
+
+// Specific scrapers for each source
+async function scrapePararius(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.pararius.nl/huurwoningen/groningen',
+    source: 'pararius',
+    linkPattern: /href="(\/appartement-te-huur\/groningen\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeKamernet(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://kamernet.nl/en/for-rent/properties-groningen',
+    source: 'kamernet',
+    domain: 'https://kamernet.nl',
+    linkPattern: /href="(\/en\/for-rent\/(?:room|studio|apartment)-groningen\/[^"?&]+)"/g,
+    typeDefault: 'room'
+  });
+}
+
+async function scrapeGrunoverhuur(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.grunoverhuur.nl/woningaanbod',
+    source: 'grunoverhuur',
+    linkPattern: /href="(\/woningaanbod\/huur\/groningen\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeFunda(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.funda.nl/huur/groningen/',
+    source: 'funda',
+    linkPattern: /href="(\/huur\/[^"]+\/groningen\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeRotsvast(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.rotsvast.nl/en/rentals/groningen',
+    source: 'rotsvast',
+    linkPattern: /href="(\/en\/huren\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeExpatRentalHolland(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.expatrentalsholland.com/offer/in/groningen',
+    source: 'expatrentalsholland',
+    linkPattern: /href="(\/offer\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeVanderMeulen(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.vandermeulen.nl/aanbod/huur',
+    source: 'vandermeulen',
+    linkPattern: /href="(\/aanbod\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeHousingAnywhere(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://housinganywhere.com/s/Groningen--Netherlands',
+    source: 'housinganywhere',
+    linkPattern: /href="(\/room\/[^"]+\/nl\/Groningen\/[^"]+)"/g,
+    typeDefault: 'room'
+  });
+}
+
+async function scrapeDCWonen(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.dcwonen.nl/aanbod/',
+    source: 'dcwonen',
+    linkPattern: /href="(\/aanbod\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeHuure(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://huure.nl/en/rental-properties',
+    source: 'huure',
+    linkPattern: /href="(\/rental-property\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeMaxxHuren(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.maxxhuren.nl/woningaanbod/',
+    source: 'maxxhuren',
+    linkPattern: /href="(\/woningaanbod\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeKPMakelaars(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.kpmakelaars.nl/verhuur/',
+    source: 'kpmakelaars',
+    linkPattern: /href="(\/verhuur\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeHouseHunting(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://househunting.nl/en/rental-properties',
+    source: 'househunting',
+    linkPattern: /href="(\/property\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapeWoldring(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.woldringverhuur.nl/verhuur/',
+    source: 'woldringverhuur',
+    linkPattern: /href="(\/verhuur\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrape050Vastgoed(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.050vastgoed.nl/huurwoningen/',
+    source: '050vastgoed',
+    linkPattern: /href="(\/huurwoning\/[^"]+)"/g,
+    typeDefault: 'apartment'
+  });
+}
+
+async function scrapePandomo(): Promise<Property[]> {
+  return await scrapeGeneric({
+    url: 'https://www.pandomo.nl/aanbod/',
+    source: 'pandomo',
+    linkPattern: /href="(\/aanbod\/[^"?&]+)"/g, // Exclude URLs with query parameters
+    typeDefault: 'apartment'
+  });
+}
+
+// Helper functions for parsing
+function extractPostalCode(address: string): string | null {
+  const match = address.match(/\b\d{4}\s*[A-Z]{2}\b/);
+  return match ? match[0] : null;
+}
+
+function extractFeatures(html: string): string[] {
+  const features = [];
+  if (html.includes('balcon') || html.includes('terras')) features.push('Balcony');
+  if (html.includes('furnished') || html.includes('gemeubileerd')) features.push('Furnished');
+  if (html.includes('garage') || html.includes('parking')) features.push('Parking');
+  if (html.includes('garden') || html.includes('tuin')) features.push('Garden');
+  return features;
+}
+
+// Improved save function with better validation
+async function saveProperties(supabase: any, properties: Property[], source: string) {
+  console.log(`Saving ${properties.length} properties from ${source}`);
+  
+  if (properties.length === 0) {
+    console.log(`No properties to save for ${source}`);
+    return 0;
+  }
+  
+  // Get existing properties to avoid duplicates
+  const { data: existingProperties, error: fetchError } = await supabase
+    .from('properties')
+    .select('external_id')
+    .eq('source', source);
+    
+  if (fetchError) {
+    console.error("Error fetching existing properties:", fetchError);
+    throw fetchError;
+  }
+  
+  const existingIds = new Set(existingProperties?.map((p: any) => p.external_id) || []);
+  const newProperties = properties.filter(p => !existingIds.has(p.external_id));
+  
+  console.log(`${newProperties.length} new properties to save for ${source}`);
+  
+  if (newProperties.length > 0) {
+    // Final validation before saving
+    const validProperties = newProperties.filter(p => {
+      const hasValidTitle = p.title && p.title.length >= 5 && !p.title.includes('?') && !p.title.includes('&');
+      const hasValidUrl = p.url && !p.url.includes('?') && !p.url.includes('&') && p.url.startsWith('http');
+      const isNotGeneric = !p.title.toLowerCase().includes('overzicht') && !p.title.toLowerCase().includes('filter');
+      
+      if (!hasValidTitle || !hasValidUrl || !isNotGeneric) {
+        console.log(`Rejecting invalid property: "${p.title}" | ${p.url}`);
+        return false;
+      }
+      return true;
+    });
+    
+    if (validProperties.length > 0) {
+      const { error: insertError } = await supabase
+        .from('properties')
+        .insert(validProperties);
+        
+      if (insertError) {
+        console.error("Error inserting properties:", insertError);
+        throw insertError;
+      }
+      
+      console.log(`Successfully saved ${validProperties.length} properties for ${source}`);
+    }
+    
+    return validProperties.length;
+  }
+  
+  return 0;
+}
+
+// Main scraping orchestrator
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    console.log("Starting property scraping process...");
+    
     const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    console.log('🏠 Starting comprehensive Dutch housing property scraping...');
-    
-    let totalNew = 0;
-    const results: any[] = [];
+    const sources = [
+      'pararius', 'kamernet', 'grunoverhuur', 'funda', 'campusgroningen', 
+      'rotsvast', 'expatrentalsholland', 'vandermeulen', 'housinganywhere', 
+      'dcwonen', 'huure', 'maxxhuren', 'kpmakelaars', 'househunting', 
+      'woldringverhuur', '050vastgoed', 'pandomo'
+    ];
+    const results: any = {};
+    let totalNewProperties = 0;
 
-    // Process each scraper with anti-detection measures
-    for (const scraper of DUTCH_SCRAPERS) {
+    for (const source of sources) {
+      console.log(`Processing ${source}...`);
+      
+      // Log scraping start
+      const { data: logData, error: logError } = await supabase
+        .from('scraping_logs')
+        .insert({
+          source,
+          status: 'running',
+          started_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (logError) {
+        console.error("Error creating scraping log:", logError);
+        continue;
+      }
+
       try {
-        console.log(`\n📡 Processing ${scraper.name}...`);
+        let properties: Property[] = [];
         
-        const properties = await scrapeWebsite(scraper);
-        
-        if (properties.length > 0) {
-          console.log(`✅ ${scraper.name} found ${properties.length} properties`);
-          
-          const { savedCount } = await saveProperties(supabase, properties);
-          console.log(`✅ ${scraper.source}: ${savedCount} new properties`);
-          
-          totalNew += savedCount;
-          results.push({ source: scraper.source, total: properties.length, new: savedCount });
-        } else {
-          console.log(`❌ No properties found for ${scraper.source}`);
-          results.push({ source: scraper.source, total: 0, new: 0 });
+        switch (source) {
+          case 'pararius':
+            properties = await scrapePararius();
+            break;
+          case 'kamernet':
+            properties = await scrapeKamernet();
+            break;
+          case 'grunoverhuur':
+            properties = await scrapeGrunoverhuur();
+            break;
+          case 'funda':
+            properties = await scrapeFunda();
+            break;
+          case 'campusgroningen':
+            properties = await scrapeCampusGroningen();
+            break;
+          case 'rotsvast':
+            properties = await scrapeRotsvast();
+            break;
+          case 'expatrentalsholland':
+            properties = await scrapeExpatRentalHolland();
+            break;
+          case 'vandermeulen':
+            properties = await scrapeVanderMeulen();
+            break;
+          case 'housinganywhere':
+            properties = await scrapeHousingAnywhere();
+            break;
+          case 'dcwonen':
+            properties = await scrapeDCWonen();
+            break;
+          case 'huure':
+            properties = await scrapeHuure();
+            break;
+          case 'maxxhuren':
+            properties = await scrapeMaxxHuren();
+            break;
+          case 'kpmakelaars':
+            properties = await scrapeKPMakelaars();
+            break;
+          case 'househunting':
+            properties = await scrapeHouseHunting();
+            break;
+          case 'woldringverhuur':
+            properties = await scrapeWoldring();
+            break;
+          case '050vastgoed':
+            properties = await scrape050Vastgoed();
+            break;
+          case 'pandomo':
+            properties = await scrapePandomo();
+            break;
         }
 
-        // Anti-detection: Random delay between 1-3 seconds
-        await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+        const newCount = await saveProperties(supabase, properties, source);
+        totalNewProperties += newCount;
         
-      } catch (error) {
-        console.error(`❌ Error scraping ${scraper.source}:`, error);
-        results.push({ source: scraper.source, error: error.message, total: 0, new: 0 });
-      }
-    }
+        // Update log with success
+        await supabase
+          .from('scraping_logs')
+          .update({
+            status: 'success',
+            properties_found: properties.length,
+            new_properties: newCount,
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', logData.id);
 
-    console.log(`🎉 Scraping completed! Total new properties: ${totalNew}`);
-
-    // Log comprehensive scraping session
-    await supabase.from('scraping_logs').insert([{
-      source: 'comprehensive_dutch_scrapers',
-      status: 'completed',
-      properties_found: results.reduce((sum, r) => sum + (r.total || 0), 0),
-      new_properties: totalNew,
-      completed_at: new Date().toISOString()
-    }]);
-
-    return new Response(JSON.stringify({
-      success: true,
-      message: 'Dutch housing scraping completed successfully',
-      totalNewProperties: totalNew,
-      results,
-      scrapedSources: DUTCH_SCRAPERS.length,
-      timestamp: new Date().toISOString()
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-
-  } catch (error) {
-    console.error('❌ Fatal error in comprehensive scraping function:', error);
-    return new Response(JSON.stringify({ 
-      error: error.message,
-      timestamp: new Date().toISOString()
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-});
-
-// Modular scraper with anti-detection measures
-async function scrapeWebsite(scraper: any): Promise<Property[]> {
-  const properties: Property[] = [];
-  
-  try {
-    // Rotate user agents for anti-detection
-    const userAgents = [
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0'
-    ];
-    
-    const response = await fetch(scraper.url, {
-      headers: {
-        'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-      }
-    });
-
-    if (!response.ok) {
-      console.error(`❌ Failed to fetch ${scraper.source}: ${response.status}`);
-      return properties;
-    }
-
-    const html = await response.text();
-    console.log(`📄 ${scraper.source} page fetched (${html.length} chars)`);
-
-    // Extract property data using resilient patterns
-    const extractedProperties = await extractPropertiesFromHTML(html, scraper);
-    properties.push(...extractedProperties);
-
-    console.log(`🎉 ${scraper.source} scraping completed. Found ${properties.length} properties.`);
-    return properties;
-
-  } catch (error) {
-    console.error(`❌ Error in ${scraper.source} scraper:`, error);
-    return properties;
-  }
-}
-
-// Resilient data extraction with standardization
-async function extractPropertiesFromHTML(html: string, scraper: any): Promise<Property[]> {
-  const properties: Property[] = [];
-  
-  try {
-    // Generic patterns that work across multiple Dutch housing sites
-    const titlePattern = /<h[1-4][^>]*>([^<]*(?:appartement|huis|kamer|studio|woning)[^<]*)<\/h[1-4]>/gi;
-    const pricePattern = /€\s*([0-9.,]+)/g;
-    const linkPattern = /href="([^"]*(?:huur|rental|property|woning|appartement)[^"]*)"/gi;
-    const sizePattern = /(\d+)\s*m²/g;
-    const bedroomPattern = /(\d+)\s*(?:slaapkamer|bedroom|kamer)/gi;
-
-    const extractedData = {
-      titles: [] as string[],
-      prices: [] as number[],
-      links: [] as string[],
-      sizes: [] as number[],
-      bedrooms: [] as number[]
-    };
-
-    // Extract all data
-    let match;
-    while ((match = titlePattern.exec(html)) !== null) {
-      extractedData.titles.push(match[1].trim());
-    }
-
-    while ((match = pricePattern.exec(html)) !== null) {
-      const price = parseFloat(match[1].replace(/[.,]/g, ''));
-      if (price > 100 && price < 10000) extractedData.prices.push(price);
-    }
-
-    while ((match = linkPattern.exec(html)) !== null) {
-      const link = match[1].startsWith('http') ? match[1] : `${new URL(scraper.url).origin}${match[1]}`;
-      extractedData.links.push(link);
-    }
-
-    while ((match = sizePattern.exec(html)) !== null) {
-      extractedData.sizes.push(parseInt(match[1]));
-    }
-
-    while ((match = bedroomPattern.exec(html)) !== null) {
-      extractedData.bedrooms.push(parseInt(match[1]));
-    }
-
-    console.log(`Extracted: ${extractedData.titles.length} titles, ${extractedData.prices.length} prices, ${extractedData.links.length} links`);
-
-    // Create standardized property objects
-    const maxProperties = Math.min(extractedData.titles.length, 10); // Limit for performance
-    for (let i = 0; i < maxProperties; i++) {
-      if (extractedData.titles[i]) {
-        const property: Property = {
-          external_id: extractedData.links[i] || `${scraper.source}-${i}-${Date.now()}`,
-          source: scraper.source,
-          title: extractedData.titles[i],
-          description: `Property listing from ${scraper.name}`,
-          url: extractedData.links[i] || scraper.url,
-          city: 'Groningen', // Default for Groningen-focused scraping
-          currency: 'EUR'
+        results[source] = {
+          success: true,
+          total: properties.length,
+          new: newCount
         };
 
-        if (extractedData.prices[i]) property.price = extractedData.prices[i];
-        if (extractedData.sizes[i]) property.surface_area = extractedData.sizes[i];
-        if (extractedData.bedrooms[i]) property.bedrooms = extractedData.bedrooms[i];
+      } catch (error) {
+        console.error(`Error scraping ${source}:`, error);
+        
+        // Update log with error
+        await supabase
+          .from('scraping_logs')
+          .update({
+            status: 'error',
+            error_message: error.message,
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', logData.id);
 
-        console.log(`✅ Created standardized property: ${property.title} - €${property.price || 'N/A'}`);
-        properties.push(property);
+        results[source] = {
+          success: false,
+          error: error.message
+        };
       }
     }
+
+    console.log("Scraping process completed. Results:", results);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: `Scraping completed. Found ${totalNewProperties} new properties.`,
+        results,
+        totalNewProperties
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      }
+    );
 
   } catch (error) {
-    console.error('Error extracting properties from HTML:', error);
-  }
-
-  return properties;
-}
-
-// Optimized database operations with duplicate prevention
-async function saveProperties(supabase: any, properties: Property[]): Promise<{ savedCount: number }> {
-  if (properties.length === 0) return { savedCount: 0 };
-
-  let savedCount = 0;
-  const source = properties[0].source;
-
-  for (const property of properties) {
-    try {
-      // Efficient duplicate check
-      const { data: existing } = await supabase
-        .from('properties')
-        .select('id')
-        .eq('external_id', property.external_id)
-        .maybeSingle();
-
-      if (!existing) {
-        const { error } = await supabase
-          .from('properties')
-          .insert([property]);
-
-        if (error) {
-          console.error(`Error inserting ${property.external_id}:`, error.message);
-        } else {
-          savedCount++;
-        }
+    console.error("Error in scraping function:", error);
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500,
       }
-    } catch (error) {
-      console.error(`Error processing ${property.external_id}:`, error);
-    }
+    );
   }
-
-  console.log(`${source}: ${savedCount} new, ${properties.length - savedCount} duplicates`);
-  return { savedCount };
-}
+});
