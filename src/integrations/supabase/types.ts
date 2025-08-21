@@ -7,7 +7,7 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "12.2.12 (cd3cf9e)"
@@ -131,10 +131,13 @@ export type Database = {
           external_id: string
           features: string[] | null
           first_seen_at: string
+          furnishing: string | null
           id: string
           image_urls: string[] | null
           is_active: boolean | null
           last_updated_at: string
+          latitude: number | null
+          longitude: number | null
           postal_code: string | null
           price: number | null
           property_type: string | null
@@ -154,10 +157,13 @@ export type Database = {
           external_id: string
           features?: string[] | null
           first_seen_at?: string
+          furnishing?: string | null
           id?: string
           image_urls?: string[] | null
           is_active?: boolean | null
           last_updated_at?: string
+          latitude?: number | null
+          longitude?: number | null
           postal_code?: string | null
           price?: number | null
           property_type?: string | null
@@ -177,10 +183,13 @@ export type Database = {
           external_id?: string
           features?: string[] | null
           first_seen_at?: string
+          furnishing?: string | null
           id?: string
           image_urls?: string[] | null
           is_active?: boolean | null
           last_updated_at?: string
+          latitude?: number | null
+          longitude?: number | null
           postal_code?: string | null
           price?: number | null
           property_type?: string | null
@@ -188,6 +197,63 @@ export type Database = {
           surface_area?: number | null
           title?: string
           url?: string
+        }
+        Relationships: []
+      }
+      scraper_health: {
+        Row: {
+          backup_selectors: Json[] | null
+          backup_urls: string[] | null
+          consecutive_failures: number | null
+          consecutive_hours_zero_properties: number | null
+          created_at: string | null
+          current_selectors: Json | null
+          current_url: string | null
+          id: string
+          is_in_repair_mode: boolean | null
+          last_failure_run: string | null
+          last_repair_attempt: string | null
+          last_successful_run: string | null
+          repair_attempts: number | null
+          repair_status: string | null
+          source: string
+          updated_at: string | null
+        }
+        Insert: {
+          backup_selectors?: Json[] | null
+          backup_urls?: string[] | null
+          consecutive_failures?: number | null
+          consecutive_hours_zero_properties?: number | null
+          created_at?: string | null
+          current_selectors?: Json | null
+          current_url?: string | null
+          id?: string
+          is_in_repair_mode?: boolean | null
+          last_failure_run?: string | null
+          last_repair_attempt?: string | null
+          last_successful_run?: string | null
+          repair_attempts?: number | null
+          repair_status?: string | null
+          source: string
+          updated_at?: string | null
+        }
+        Update: {
+          backup_selectors?: Json[] | null
+          backup_urls?: string[] | null
+          consecutive_failures?: number | null
+          consecutive_hours_zero_properties?: number | null
+          created_at?: string | null
+          current_selectors?: Json | null
+          current_url?: string | null
+          id?: string
+          is_in_repair_mode?: boolean | null
+          last_failure_run?: string | null
+          last_repair_attempt?: string | null
+          last_successful_run?: string | null
+          repair_attempts?: number | null
+          repair_status?: string | null
+          source?: string
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -265,15 +331,22 @@ export type Database = {
       }
       user_alerts: {
         Row: {
+          cities: string[] | null
           created_at: string
+          furnishing: string[] | null
           id: string
           is_active: boolean | null
           keywords: string[] | null
+          latitude: number | null
+          location_radius: number | null
+          longitude: number | null
           max_bedrooms: number | null
           max_price: number | null
           min_bedrooms: number | null
           min_price: number | null
+          min_surface_area: number | null
           name: string
+          notification_methods: string[] | null
           postal_codes: string[] | null
           property_types: string[] | null
           sources: string[] | null
@@ -281,15 +354,22 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          cities?: string[] | null
           created_at?: string
+          furnishing?: string[] | null
           id?: string
           is_active?: boolean | null
           keywords?: string[] | null
+          latitude?: number | null
+          location_radius?: number | null
+          longitude?: number | null
           max_bedrooms?: number | null
           max_price?: number | null
           min_bedrooms?: number | null
           min_price?: number | null
+          min_surface_area?: number | null
           name: string
+          notification_methods?: string[] | null
           postal_codes?: string[] | null
           property_types?: string[] | null
           sources?: string[] | null
@@ -297,15 +377,22 @@ export type Database = {
           user_id: string
         }
         Update: {
+          cities?: string[] | null
           created_at?: string
+          furnishing?: string[] | null
           id?: string
           is_active?: boolean | null
           keywords?: string[] | null
+          latitude?: number | null
+          location_radius?: number | null
+          longitude?: number | null
           max_bedrooms?: number | null
           max_price?: number | null
           min_bedrooms?: number | null
           min_price?: number | null
+          min_surface_area?: number | null
           name?: string
+          notification_methods?: string[] | null
           postal_codes?: string[] | null
           property_types?: string[] | null
           sources?: string[] | null
