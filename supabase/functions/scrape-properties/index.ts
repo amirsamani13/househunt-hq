@@ -267,22 +267,36 @@ async function scrapeKamernet(): Promise<Property[]> {
           fullUrl = fullUrl.startsWith('/') ? `https://kamernet.nl${relativeUrl}` : `https://kamernet.nl/${relativeUrl}`;
         }
         
-        // Extract street name and property details from URL
+        // Extract street name from URL properly
         const urlParts = relativeUrl.split('/');
         let streetName = 'Unknown Location';
-        let propertyType = 'room';
+        let propertyType = 'room'; // Default type
         
-        // Parse URL structure: /en/for-rent/room-groningen/street-name/property-id
+        // URL structure: /huren/kamer-groningen/street-name/kamer-id
         if (urlParts.length >= 4) {
-          propertyType = urlParts[3]?.split('-')[0] || 'room';
-          streetName = urlParts[4] || 'Unknown Street';
+          const streetPart = urlParts[urlParts.length - 2]; // Get street name part
           
-          // Clean up street name for display
-          streetName = streetName.replace(/\-/g, ' ')
-                               .replace(/\b\w/g, l => l.toUpperCase())
-                               .replace(/straat/i, 'straat')
-                               .replace(/laan/i, 'laan')
-                               .replace(/weg/i, 'weg');
+          // Convert street name from URL format to proper title case
+          streetName = streetPart
+            .split('-')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join('');
+          
+          // Handle common Dutch street suffixes
+          if (streetName.toLowerCase().includes('straat')) {
+            streetName = streetName.replace(/straat/i, 'straat');
+          } else if (streetName.toLowerCase().includes('laan')) {
+            streetName = streetName.replace(/laan/i, 'laan');
+          } else if (streetName.toLowerCase().includes('weg')) {
+            streetName = streetName.replace(/weg/i, 'weg');
+          }
+          
+          // Determine property type from URL
+          if (relativeUrl.includes('studio')) {
+            propertyType = 'studio';
+          } else if (relativeUrl.includes('apartment')) {
+            propertyType = 'apartment';
+          }
         }
         
         // Generate realistic property data
