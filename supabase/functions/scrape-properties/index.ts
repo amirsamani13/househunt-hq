@@ -292,7 +292,7 @@ async function scrapeKamernet(): Promise<Property[]> {
         const property: Property = {
           external_id: `kamernet:${fullUrl}`,
           source: 'kamernet',
-          title: `${propertyType === 'room' ? 'Room' : propertyType === 'studio' ? 'Studio' : 'Apartment'} at ${streetName}`,
+          title: streetName, // Just the street name like "Resedastraat"
           description: `Student ${propertyType} at ${streetName}, Groningen`,
           price,
           address: `${streetName}, Groningen, Netherlands`,
@@ -334,7 +334,7 @@ async function scrapeKamernet(): Promise<Property[]> {
         const property: Property = {
           external_id: `kamernet:${fullUrl}`,
           source: 'kamernet',
-          title: `${street.type === 'room' ? 'Room' : street.type === 'studio' ? 'Studio' : 'Apartment'} at ${street.name}`,
+          title: street.name, // Just the street name like "Paterswoldseweg"
           description: `Student ${street.type} at ${street.name}, Groningen`,
           price,
           address: `${street.name}, Groningen, Netherlands`,
