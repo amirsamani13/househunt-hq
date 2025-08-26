@@ -212,24 +212,38 @@ async function sendSMS(to: string, message: string): Promise<boolean> {
 }
 
 async function sendNotifications(property: Property, alert: UserAlert, userProfile: any): Promise<void> {
-  // Send Email only for now
+  // Send Email notification
   if (userProfile.email) {
     try {
       const emailHTML = createEmailHTML(property, alert.name);
-      await resend.emails.send({
+      const notificationText = createNotificationMessage(property, alert.name);
+      
+      // Enhanced subject line with key property details
+      const priceStr = formatPrice(property.price);
+      const locationStr = property.city || 'Groningen';
+      const subject = `🏠 New Property Alert: ${priceStr} in ${locationStr}`;
+      
+      const { data, error } = await resend.emails.send({
         from: RESEND_FROM,
         to: [userProfile.email],
-        subject: `🏠 New Property Match: ${property.title}`,
+        subject: subject,
         html: emailHTML,
-        text: createNotificationMessage(property, alert.name),
+        text: notificationText,
       });
-      console.log(`Email sent to ${userProfile.email} for property: ${property.title}`);
+
+      if (error) {
+        console.error('Resend API error:', error);
+        throw error;
+      }
+
+      console.log(`✅ Email sent successfully to ${userProfile.email} for property: ${property.title}`);
     } catch (error) {
-      console.error("Failed to send email:", error);
+      console.error(`❌ Failed to send email to ${userProfile.email}:`, error);
       throw error;
     }
   } else {
-    console.log("No email address found for user");
+    console.warn("⚠️ No email address found for user");
+    throw new Error("No email address available for notification");
   }
 }
 

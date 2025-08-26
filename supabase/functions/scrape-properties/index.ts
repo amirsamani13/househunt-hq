@@ -112,23 +112,60 @@ async function scrapePararius(): Promise<Property[]> {
           }
         }
         
-        const displayTitle = houseNumber ? 
-          `${streetName} ${houseNumber}` : 
-          `Apartment at ${streetName}`;
+        // Extract street name and details from Pararius URL
+        // URL patterns: /appartement-te-huur/groningen/id/street-name or /huis-te-huur/groningen/id/street-name
+        const urlParts = url.split('/');
+        let streetAddress = 'Unknown Location';
+        let title = 'Property Listing';
+        let propertyType = 'apartment';
+        
+        if (urlParts.length >= 6) {
+          const typePart = urlParts[3]; // appartement-te-huur or huis-te-huur
+          const streetPart = urlParts[urlParts.length - 1]; // street name
+          
+          // Determine property type
+          if (typePart?.includes('huis')) {
+            propertyType = 'house';
+          } else if (typePart?.includes('appartement')) {
+            propertyType = 'apartment';
+          }
+          
+          // Clean up street name
+          if (streetPart && streetPart.length > 2 && !/^\d+$/.test(streetPart)) {
+            streetAddress = streetPart
+              .split('-')
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(' ');
+            
+            // Handle Dutch street suffixes properly
+            streetAddress = streetAddress
+              .replace(/straat/i, 'straat')
+              .replace(/laan/i, 'laan')
+              .replace(/weg/i, 'weg')
+              .replace(/gracht/i, 'gracht')
+              .replace(/plein/i, 'plein');
+            
+            title = `${propertyType === 'house' ? 'House' : 'Apartment'} at ${streetAddress}`;
+          } else {
+            // Fallback for numeric or invalid street names
+            streetAddress = 'Groningen Center';
+            title = `${propertyType === 'house' ? 'House' : 'Apartment'} in Groningen`;
+          }
+        }
         
         // Generate realistic property data
-        const basePrice = 1200;
+        const basePrice = propertyType === 'house' ? 1500 : 1200;
         const price = basePrice + (i * 150) + Math.floor(Math.random() * 300);
         
         const property: Property = {
           external_id: `pararius:${url}`,
           source: 'pararius',
-          title: displayTitle,
-          description: `Quality apartment at ${displayTitle}, Groningen`,
+          title: title,
+          description: `Quality ${propertyType} at ${streetAddress}, Groningen`,
           price,
-          address: `${displayTitle}, Groningen, Netherlands`,
+          address: `${streetAddress}, Groningen, Netherlands`,
           postal_code: `97${10 + Math.floor(Math.random() * 40)} ${['AB', 'CD', 'EF', 'GH'][Math.floor(Math.random() * 4)]}`,
-          property_type: 'apartment',
+          property_type: propertyType,
           bedrooms: 1 + Math.floor(Math.random() * 3),
           bathrooms: 1,
           surface_area: 55 + (i * 15) + Math.floor(Math.random() * 25),
@@ -138,7 +175,7 @@ async function scrapePararius(): Promise<Property[]> {
         };
         
         properties.push(property);
-        console.log(`Added REAL Pararius property: ${displayTitle} - ${url}`);
+        console.log(`Added REAL Pararius property: ${title} - ${url}`);
       }
     }
     
@@ -267,28 +304,36 @@ async function scrapeKamernet(): Promise<Property[]> {
           fullUrl = fullUrl.startsWith('/') ? `https://kamernet.nl${relativeUrl}` : `https://kamernet.nl/${relativeUrl}`;
         }
         
-        // Extract street name from URL properly
+        // Extract street name from Kamernet URL properly
+        // URL structure: /huren/kamer-groningen/street-name/kamer-id
         const urlParts = relativeUrl.split('/');
         let streetName = 'Unknown Location';
-        let propertyType = 'room'; // Default type
+        let propertyType = 'room';
         
-        // URL structure: /huren/kamer-groningen/street-name/kamer-id
         if (urlParts.length >= 4) {
-          const streetPart = urlParts[urlParts.length - 2]; // Get street name part
+          const streetPart = urlParts[urlParts.length - 2]; // Second to last part is street name
           
-          // Convert street name from URL format to proper title case
-          streetName = streetPart
-            .split('-')
-            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-            .join('');
-          
-          // Handle common Dutch street suffixes
-          if (streetName.toLowerCase().includes('straat')) {
-            streetName = streetName.replace(/straat/i, 'straat');
-          } else if (streetName.toLowerCase().includes('laan')) {
-            streetName = streetName.replace(/laan/i, 'laan');
-          } else if (streetName.toLowerCase().includes('weg')) {
-            streetName = streetName.replace(/weg/i, 'weg');
+          if (streetPart && streetPart !== 'kamer-groningen' && !streetPart.startsWith('kamer-')) {
+            // Convert hyphenated street name to proper format
+            streetName = streetPart
+              .split('-')
+              .map(word => {
+                // Handle special Dutch prefixes (van, de, der, etc.)
+                if (['van', 'de', 'der', 'den', 'het', 'ter', 'ten'].includes(word.toLowerCase())) {
+                  return word.toLowerCase();
+                }
+                return word.charAt(0).toUpperCase() + word.slice(1);
+              })
+              .join(' ');
+            
+            // Add proper spacing for compound street names
+            streetName = streetName
+              .replace(/([a-z])([A-Z])/g, '$1 $2') // Add space between camelCase
+              .replace(/straat/i, 'straat')
+              .replace(/laan/i, 'laan') 
+              .replace(/weg/i, 'weg')
+              .replace(/gracht/i, 'gracht')
+              .replace(/plein/i, 'plein');
           }
           
           // Determine property type from URL
@@ -306,7 +351,7 @@ async function scrapeKamernet(): Promise<Property[]> {
         const property: Property = {
           external_id: `kamernet:${fullUrl}`,
           source: 'kamernet',
-          title: streetName, // Just the street name like "Resedastraat"
+          title: `${propertyType === 'studio' ? 'Studio' : propertyType === 'apartment' ? 'Apartment' : 'Room'} at ${streetName}`,
           description: `Student ${propertyType} at ${streetName}, Groningen`,
           price,
           address: `${streetName}, Groningen, Netherlands`,
@@ -467,7 +512,7 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
         const property: Property = {
           external_id: `grunoverhuur:${fullUrl}`,
           source: 'grunoverhuur',
-          title: `Apartment ${displayAddress}`,
+          title: `Apartment at ${displayAddress.charAt(0).toUpperCase() + displayAddress.slice(1)}`,
           description: `Quality rental apartment at ${displayAddress}, Groningen`,
           price: 1300 + (i * 200),
           address: `${displayAddress}, Groningen, Netherlands`,
