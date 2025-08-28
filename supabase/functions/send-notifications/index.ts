@@ -128,32 +128,61 @@ function createEmailHTML(property: Property, alertName: string): string {
   const area = property.surface_area ? `${property.surface_area}m²` : 'N/A';
   
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-      <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-        <h1 style="color: #2563eb; margin-bottom: 20px;">🏠 New Property Match!</h1>
-        <h2 style="color: #1f2937; margin-bottom: 15px;">${property.title}</h2>
-        
-        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Alert:</strong> ${alertName}</p>
-          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Price:</strong> ${price}</p>
-          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Location:</strong> ${property.address || 'Groningen'}</p>
-          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Bedrooms:</strong> ${bedrooms}</p>
-          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Bathrooms:</strong> ${bathrooms}</p>
-          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Size:</strong> ${area}</p>
-          <p style="margin: 0 0 10px 0; color: #374151;"><strong>Source:</strong> ${property.source}</p>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Property Alert - ${property.title}</title>
+        <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; background-color: #f4f4f4; }
+            .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin: -30px -30px 30px -30px; text-align: center; }
+            .property-card { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea; }
+            .price { font-size: 24px; font-weight: bold; color: #667eea; margin-bottom: 15px; }
+            .details { margin: 15px 0; }
+            .detail-item { display: inline-block; margin: 5px 10px 5px 0; padding: 5px 10px; background: #e9ecef; border-radius: 15px; font-size: 14px; }
+            .cta-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; margin: 20px 0; }
+            .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666; text-align: center; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🏠 New Property Alert!</h1>
+                <p>A property matching your "${alertName}" alert has been found</p>
+            </div>
+            
+            <div class="property-card">
+                <h2 style="margin-top: 0; color: #333;">${property.title}</h2>
+                <div class="price">${price}</div>
+                
+                <div class="details">
+                    ${property.surface_area ? `<span class="detail-item">📐 ${area}</span>` : ''}
+                    ${property.bedrooms ? `<span class="detail-item">🛏️ ${bedrooms}</span>` : ''}
+                    ${property.bathrooms ? `<span class="detail-item">🚿 ${bathrooms}</span>` : ''}
+                    ${property.property_type ? `<span class="detail-item">🏷️ ${property.property_type}</span>` : ''}
+                    <span class="detail-item">🌐 ${property.source}</span>
+                </div>
+                
+                ${property.address ? `<p><strong>📍 Location:</strong> ${property.address}</p>` : ''}
+                ${property.description ? `<p><strong>📝 Description:</strong> ${property.description}</p>` : ''}
+                
+                <a href="${property.url}" class="cta-button" target="_blank" rel="noopener">
+                    🔗 View Property Details
+                </a>
+            </div>
+            
+            <div class="footer">
+                <p>This property was found on <strong>${property.source}</strong> and matches your saved alert "<em>${alertName}</em>".</p>
+                <p>Act fast - good properties in Groningen are usually taken quickly!</p>
+                <p style="margin-top: 15px;">
+                    <small>You're receiving this because you have an active property alert.</small>
+                </p>
+            </div>
         </div>
-        
-        ${property.description ? `<p style="color: #6b7280; margin-bottom: 20px;">${property.description}</p>` : ''}
-        
-        <div style="text-align: center; margin-top: 30px;">
-          <a href="${property.url}" style="background-color: #2563eb; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">View Property</a>
-        </div>
-        
-        <p style="color: #9ca3af; font-size: 14px; margin-top: 30px; text-align: center;">
-          This notification was sent because this property matches your search criteria for "${alertName}".
-        </p>
-      </div>
-    </div>
+    </body>
+    </html>
   `;
 }
 
