@@ -91,27 +91,6 @@ async function scrapePararius(): Promise<Property[]> {
       for (let i = 0; i < Math.min(uniqueUrls.length, 8); i++) {
         const url = uniqueUrls[i];
         
-        // Extract property details from the URL structure
-        const urlParts = url.split('/');
-        let streetName = 'Unknown Street';
-        let houseNumber = '';
-        
-        // Typical Pararius URL: /appartement-te-huur/groningen/abc123/streetname-housenumber
-        if (urlParts.length >= 5) {
-          const lastPart = urlParts[urlParts.length - 1];
-          if (lastPart && lastPart.includes('-')) {
-            const parts = lastPart.split('-');
-            streetName = parts.slice(0, -1).join(' ');
-            houseNumber = parts[parts.length - 1];
-            
-            // Clean up street name
-            streetName = streetName.replace(/\b\w/g, l => l.toUpperCase())
-                                 .replace(/straat/i, 'straat')
-                                 .replace(/laan/i, 'laan')
-                                 .replace(/weg/i, 'weg');
-          }
-        }
-        
         // Extract street name and details from Pararius URL
         // URL patterns: /appartement-te-huur/groningen/id/street-name or /huis-te-huur/groningen/id/street-name
         const urlParts = url.split('/');
