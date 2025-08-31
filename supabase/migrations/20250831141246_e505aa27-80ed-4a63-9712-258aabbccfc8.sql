@@ -1,0 +1,36 @@
+-- Insert a test property to verify the notification system works end-to-end
+INSERT INTO public.properties (
+  external_id,
+  source,
+  title,
+  description,
+  price,
+  bedrooms,
+  bathrooms,
+  surface_area,
+  address,
+  city,
+  postal_code,
+  property_type,
+  url,
+  is_active,
+  first_seen_at,
+  last_updated_at
+) VALUES (
+  'test-property-notification-system',
+  'test',
+  'Beautiful Test Apartment in Groningen City Center',
+  'A lovely 2-bedroom apartment with modern amenities, perfect for students or young professionals. Located in the heart of Groningen with easy access to public transport.',
+  850,
+  2,
+  1,
+  65,
+  'Grote Markt 15',
+  'Groningen',
+  '9712HN',
+  'apartment',
+  'https://example.com/test-property',
+  true,
+  now(),
+  now()
+);
