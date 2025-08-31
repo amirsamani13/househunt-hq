@@ -414,10 +414,35 @@ serve(async (req) => {
 
         // If a row was returned, it means a new record was inserted (not ignored)
         if (inserted && inserted.length > 0) {
-          if (userProfile?.email) {
-            await sendNotifications(property, alert, userProfile);
+          const notificationId = inserted[0].id;
+          try {
+            if (userProfile?.email) {
+              await sendNotifications(property, alert, userProfile);
+              
+              // Update notification record to mark as successfully sent
+              await supabase
+                .from('notifications')
+                .update({
+                  delivery_status: 'sent',
+                  delivered_at: new Date().toISOString()
+                })
+                .eq('id', notificationId);
+                
+              console.log(`✅ Notification ${notificationId} delivered successfully`);
+            }
+            notificationsSent++;
+          } catch (emailError) {
+            console.error(`❌ Failed to send notification ${notificationId}:`, emailError);
+            
+            // Update notification record to mark as failed
+            await supabase
+              .from('notifications')
+              .update({
+                delivery_status: 'failed',
+                delivery_error: String(emailError)
+              })
+              .eq('id', notificationId);
           }
-          notificationsSent++;
         } else {
           console.log(`Duplicate notification for user ${alert.user_id} and property ${property.id} — already sent.`);
         }
