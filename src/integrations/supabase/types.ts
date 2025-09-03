@@ -24,6 +24,9 @@ export type Database = {
           is_read: boolean | null
           message: string
           property_id: string
+          qa_validated_at: string | null
+          quality_issues: Json | null
+          quality_score: number | null
           sent_at: string
           user_id: string
         }
@@ -36,6 +39,9 @@ export type Database = {
           is_read?: boolean | null
           message: string
           property_id: string
+          qa_validated_at?: string | null
+          quality_issues?: Json | null
+          quality_score?: number | null
           sent_at?: string
           user_id: string
         }
@@ -48,6 +54,9 @@ export type Database = {
           is_read?: boolean | null
           message?: string
           property_id?: string
+          qa_validated_at?: string | null
+          quality_issues?: Json | null
+          quality_score?: number | null
           sent_at?: string
           user_id?: string
         }
@@ -200,6 +209,183 @@ export type Database = {
         }
         Relationships: []
       }
+      qa_admin_alerts: {
+        Row: {
+          alert_type: string
+          created_at: string
+          details: Json | null
+          id: string
+          message: string
+          resolved_at: string | null
+          sent_at: string | null
+          severity: string
+          status: string
+          test_run_id: string | null
+          title: string
+        }
+        Insert: {
+          alert_type: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          message: string
+          resolved_at?: string | null
+          sent_at?: string | null
+          severity?: string
+          status?: string
+          test_run_id?: string | null
+          title: string
+        }
+        Update: {
+          alert_type?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          message?: string
+          resolved_at?: string | null
+          sent_at?: string | null
+          severity?: string
+          status?: string
+          test_run_id?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qa_admin_alerts_test_run_id_fkey"
+            columns: ["test_run_id"]
+            isOneToOne: false
+            referencedRelation: "qa_test_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      qa_test_results: {
+        Row: {
+          completed_at: string | null
+          error_message: string | null
+          id: string
+          quality_score: number | null
+          response_time_ms: number | null
+          started_at: string
+          status: string
+          test_data: Json | null
+          test_name: string
+          test_run_id: string
+          test_target: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          error_message?: string | null
+          id?: string
+          quality_score?: number | null
+          response_time_ms?: number | null
+          started_at?: string
+          status: string
+          test_data?: Json | null
+          test_name: string
+          test_run_id: string
+          test_target?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          error_message?: string | null
+          id?: string
+          quality_score?: number | null
+          response_time_ms?: number | null
+          started_at?: string
+          status?: string
+          test_data?: Json | null
+          test_name?: string
+          test_run_id?: string
+          test_target?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qa_test_results_test_run_id_fkey"
+            columns: ["test_run_id"]
+            isOneToOne: false
+            referencedRelation: "qa_test_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      qa_test_runs: {
+        Row: {
+          completed_at: string | null
+          error_message: string | null
+          failed_tests: number | null
+          id: string
+          passed_tests: number | null
+          started_at: string
+          status: string
+          test_property_id: string | null
+          test_user_id: string | null
+          total_tests: number | null
+        }
+        Insert: {
+          completed_at?: string | null
+          error_message?: string | null
+          failed_tests?: number | null
+          id?: string
+          passed_tests?: number | null
+          started_at?: string
+          status?: string
+          test_property_id?: string | null
+          test_user_id?: string | null
+          total_tests?: number | null
+        }
+        Update: {
+          completed_at?: string | null
+          error_message?: string | null
+          failed_tests?: number | null
+          id?: string
+          passed_tests?: number | null
+          started_at?: string
+          status?: string
+          test_property_id?: string | null
+          test_user_id?: string | null
+          total_tests?: number | null
+        }
+        Relationships: []
+      }
+      qa_test_users: {
+        Row: {
+          cleaned_up_at: string | null
+          cleanup_attempts: number | null
+          created_at: string
+          email: string
+          id: string
+          test_run_id: string | null
+          user_id: string
+        }
+        Insert: {
+          cleaned_up_at?: string | null
+          cleanup_attempts?: number | null
+          created_at?: string
+          email: string
+          id?: string
+          test_run_id?: string | null
+          user_id: string
+        }
+        Update: {
+          cleaned_up_at?: string | null
+          cleanup_attempts?: number | null
+          created_at?: string
+          email?: string
+          id?: string
+          test_run_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qa_test_users_test_run_id_fkey"
+            columns: ["test_run_id"]
+            isOneToOne: false
+            referencedRelation: "qa_test_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scraper_health: {
         Row: {
           backup_selectors: Json[] | null
@@ -211,9 +397,13 @@ export type Database = {
           current_url: string | null
           id: string
           is_in_repair_mode: boolean | null
+          last_admin_alert: string | null
           last_failure_run: string | null
+          last_qa_check: string | null
           last_repair_attempt: string | null
           last_successful_run: string | null
+          qa_failure_count: number | null
+          repair_attempt_count: number | null
           repair_attempts: number | null
           repair_status: string | null
           source: string
@@ -229,9 +419,13 @@ export type Database = {
           current_url?: string | null
           id?: string
           is_in_repair_mode?: boolean | null
+          last_admin_alert?: string | null
           last_failure_run?: string | null
+          last_qa_check?: string | null
           last_repair_attempt?: string | null
           last_successful_run?: string | null
+          qa_failure_count?: number | null
+          repair_attempt_count?: number | null
           repair_attempts?: number | null
           repair_status?: string | null
           source: string
@@ -247,9 +441,13 @@ export type Database = {
           current_url?: string | null
           id?: string
           is_in_repair_mode?: boolean | null
+          last_admin_alert?: string | null
           last_failure_run?: string | null
+          last_qa_check?: string | null
           last_repair_attempt?: string | null
           last_successful_run?: string | null
+          qa_failure_count?: number | null
+          repair_attempt_count?: number | null
           repair_attempts?: number | null
           repair_status?: string | null
           source?: string
@@ -406,7 +604,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      cleanup_old_qa_data: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
