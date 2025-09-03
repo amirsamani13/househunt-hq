@@ -17,3 +17,12 @@ verify_jwt = false
 
 [functions.send-test-email]
 verify_jwt = false
+
+[functions.qa-continuous-agent]
+verify_jwt = false
+
+[functions.qa-admin-alerts]
+verify_jwt = false
+
+[functions.auto-repair-scraper]
+verify_jwt = false
