@@ -589,49 +589,85 @@ async function handleAutoRepair(supabase: any, testRunId: string, failedTest: Te
       if (attemptCount <= 3) {
         console.log(`🔧 Attempting auto-repair for ${scraper} (attempt ${attemptCount})`);
         
-        // Trigger auto-repair function (we would need to create this)
-        // For now, just update the repair attempt count
+        // Trigger auto-repair function with proper parameters
+        try {
+          const { error: repairError } = await supabase.functions.invoke('auto-repair-scraper', {
+            body: { 
+              scraper_source: scraper,
+              repair_type: 'full_health_check'
+            }
+          });
+
+          if (repairError) {
+            console.error(`❌ Auto-repair invocation failed for ${scraper}:`, repairError);
+          }
+        } catch (invokeError) {
+          console.error(`❌ Failed to invoke auto-repair for ${scraper}:`, invokeError);
+        }
+
         await supabase
           .from('scraper_health')
           .update({
             repair_attempt_count: attemptCount,
-            is_in_repair_mode: true
+            is_in_repair_mode: true,
+            last_repair_attempt: new Date().toISOString()
           })
           .eq('source', scraper);
 
       } else {
-        // Max attempts reached, send admin alert
-        console.log(`🚨 Max repair attempts reached for ${scraper}, sending admin alert`);
-        await createAdminAlert(supabase, testRunId, {
-          alert_type: 'scraper_repair_failed',
-          severity: 'critical',
-          title: `Scraper Auto-Repair Failed: ${scraper}`,
-          message: `The ${scraper} scraper has failed auto-repair after 3 attempts. Manual intervention required.`,
-          details: {
-            scraper: scraper,
-            test_result: failedTest,
-            repair_attempts: attemptCount
-          }
-        });
+        // Max attempts reached, check if we need to send admin alert (avoid spam)
+        const lastAlert = healthData?.last_admin_alert;
+        const now = new Date();
+        const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        
+        // Only send alert if no alert was sent in the last 24 hours
+        if (!lastAlert || new Date(lastAlert) < twentyFourHoursAgo) {
+          console.log(`🚨 Max repair attempts reached for ${scraper}, sending admin alert`);
+          await createAdminAlert(supabase, testRunId, {
+            alert_type: 'scraper_repair_failed',
+            severity: 'critical',
+            title: `Scraper Auto-Repair Failed: ${scraper}`,
+            message: `The ${scraper} scraper has failed auto-repair after 3 attempts. Manual intervention required.`,
+            details: {
+              scraper: scraper,
+              test_result: failedTest,
+              repair_attempts: attemptCount,
+              last_alert: lastAlert
+            }
+          });
 
-        await supabase
-          .from('scraper_health')
-          .update({ last_admin_alert: new Date().toISOString() })
-          .eq('source', scraper);
+          await supabase
+            .from('scraper_health')
+            .update({ last_admin_alert: new Date().toISOString() })
+            .eq('source', scraper);
+        } else {
+          console.log(`⏳ Skipping admin alert for ${scraper} - already sent within 24 hours`);
+        }
       }
 
     } else if (failedTest.test_name === 'notification_test') {
-      // Handle notification system repair
-      await createAdminAlert(supabase, testRunId, {
-        alert_type: 'notification_system_failed',
-        severity: 'warning',
-        title: 'Notification System Quality Issue',
-        message: 'The notification system failed quality checks.',
-        details: {
-          test_result: failedTest,
-          quality_issues: failedTest.test_data?.quality_issues
-        }
-      });
+      // Handle notification system repair - only alert once per day
+      const { data: recentAlert } = await supabase
+        .from('qa_admin_alerts')
+        .select('created_at')
+        .eq('alert_type', 'notification_system_failed')
+        .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+        .limit(1);
+
+      if (!recentAlert || recentAlert.length === 0) {
+        await createAdminAlert(supabase, testRunId, {
+          alert_type: 'notification_system_failed',
+          severity: 'warning',
+          title: 'Notification System Quality Issue',
+          message: 'The notification system failed quality checks.',
+          details: {
+            test_result: failedTest,
+            quality_issues: failedTest.test_data?.quality_issues
+          }
+        });
+      } else {
+        console.log('⏳ Skipping notification system alert - already sent within 24 hours');
+      }
     }
 
   } catch (error: any) {
