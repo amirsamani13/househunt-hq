@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.auto-repair-scraper]
 verify_jwt = false
+
+[functions.qa-daily-summary]
+verify_jwt = false
