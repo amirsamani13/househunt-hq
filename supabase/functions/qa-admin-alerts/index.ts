@@ -23,6 +23,24 @@ const serve_handler = async (req: Request): Promise<Response> => {
   try {
     console.log('📧 QA Admin Alerts handler started');
 
+    // Check if admin alerts are paused
+    const { data: pauseConfig } = await supabase
+      .from('qa_system_config')
+      .select('setting_value')
+      .eq('setting_key', 'admin_alerts_paused')
+      .single();
+
+    if (pauseConfig?.setting_value?.paused) {
+      console.log('⏸️ Admin alerts are paused - skipping email processing');
+      return new Response(JSON.stringify({ 
+        status: 'paused',
+        reason: pauseConfig.setting_value.reason || 'Admin alerts are temporarily paused'
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     const { alert_id } = await req.json();
 
     let alerts;
