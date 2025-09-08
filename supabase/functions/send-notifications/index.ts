@@ -261,14 +261,36 @@ async function sendNotifications(property: Property, alert: UserAlert, userProfi
       });
 
       if (error) {
-        console.error('Resend API error:', error);
-        throw error;
+        // Properly format Resend API errors
+        const errorDetails = {
+          message: error.message || 'Resend API error',
+          name: error.name || 'ResendError',
+          code: error.code || 'unknown',
+          details: error
+        };
+        console.error('Resend API error details:', errorDetails);
+        throw new Error(`Resend API failed: ${error.message || JSON.stringify(error)}`);
       }
 
       console.log(`✅ Email sent successfully to ${userProfile.email} for property: ${property.title}`);
     } catch (error) {
-      console.error(`❌ Failed to send email to ${userProfile.email}:`, error);
-      throw error;
+      // Properly handle and format error messages
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        errorMessage = JSON.stringify(error);
+      } else {
+        errorMessage = String(error);
+      }
+      
+      console.error(`❌ Failed to send email to ${userProfile.email}:`, {
+        error: errorMessage,
+        propertyTitle: property.title,
+        alertName: alert.name,
+        userEmail: userProfile.email
+      });
+      throw new Error(`Email delivery failed: ${errorMessage}`);
     }
   } else {
     console.warn("⚠️ No email address found for user");
@@ -282,7 +304,15 @@ serve(async (req) => {
   }
 
   try {
-    console.log("Starting notification processing...");
+    console.log("🚀 Starting notification processing...");
+    
+    // Check Resend API key is configured
+    if (!Deno.env.get("RESEND_API_KEY")) {
+      throw new Error("RESEND_API_KEY environment variable is not configured");
+    }
+    
+    console.log("✅ Resend API key configured");
+    console.log("📧 Using sender email:", RESEND_FROM);
     
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -356,8 +386,21 @@ serve(async (req) => {
         .eq('user_id', alert.user_id)
         .maybeSingle();
 
+      // Skip test users (safety check)
+      if (userProfile?.email && (userProfile.email.includes('@test.com') || userProfile.email.startsWith('qa-'))) {
+        console.log(`⚠️ Skipping test user: ${userProfile.email}`);
+        continue;
+      }
+
       // Respect pause state even in test mode
       if (userProfile?.notifications_paused) {
+        console.log(`⏸️ Skipping paused user: ${userProfile?.email}`);
+        continue;
+      }
+
+      // Validate email exists and is valid
+      if (!userProfile?.email || !userProfile.email.includes('@')) {
+        console.log(`⚠️ Skipping user with invalid email: ${userProfile?.email || 'no email'}`);
         continue;
       }
 
@@ -431,18 +474,34 @@ serve(async (req) => {
               console.log(`✅ Notification ${notificationId} delivered successfully`);
             }
             notificationsSent++;
-          } catch (emailError) {
-            console.error(`❌ Failed to send notification ${notificationId}:`, emailError);
-            
-            // Update notification record to mark as failed
-            await supabase
-              .from('notifications')
-              .update({
-                delivery_status: 'failed',
-                delivery_error: String(emailError)
-              })
-              .eq('id', notificationId);
+        } catch (emailError) {
+          // Properly handle error logging
+          let errorMessage = 'Unknown error';
+          if (emailError instanceof Error) {
+            errorMessage = emailError.message;
+          } else if (typeof emailError === 'object' && emailError !== null) {
+            errorMessage = JSON.stringify(emailError);
+          } else {
+            errorMessage = String(emailError);
           }
+          
+          console.error(`❌ Failed to send notification ${notificationId}:`, {
+            error: errorMessage,
+            propertyId: property.id,
+            propertyTitle: property.title,
+            userEmail: userProfile?.email,
+            alertName: alert.name
+          });
+          
+          // Update notification record to mark as failed
+          await supabase
+            .from('notifications')
+            .update({
+              delivery_status: 'failed',
+              delivery_error: errorMessage
+            })
+            .eq('id', notificationId);
+        }
         } else {
           console.log(`Duplicate notification for user ${alert.user_id} and property ${property.id} — already sent.`);
         }
