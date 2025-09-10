@@ -63,158 +63,105 @@ async function scrapePararius(): Promise<Property[]> {
     const html = await response.text();
     console.log("Pararius HTML fetched, length:", html.length);
     
-    // Enhanced property URL extraction for Pararius
-    const specificUrlPattern = /href="(https:\/\/www\.pararius\.nl\/[^"]*huur[^"]*groningen[^"]*\/[0-9a-z\-]+\/[^"]+)"/gi;
-    const urlMatches = Array.from(html.matchAll(specificUrlPattern));
-    console.log("Found specific Pararius property URLs:", urlMatches.length);
+    // Look for property listing links in the HTML
+    const propertyLinkPattern = /<a[^>]*href="([^"]*(?:appartement|huis|studio|woning).*?groningen[^"]*)"[^>]*>/gi;
+    const linkMatches = Array.from(html.matchAll(propertyLinkPattern));
     
-    // Also look for relative URLs
-    const relativeUrlPattern = /href="(\/[^"]*huur[^"]*groningen[^"]*\/[0-9a-z\-]+\/[^"]+)"/gi;
-    const relativeMatches = Array.from(html.matchAll(relativeUrlPattern));
-    console.log("Found relative Pararius URLs:", relativeMatches.length);
+    // Also try the card-based pattern
+    const cardPattern = /<article[^>]*class="[^"]*listing-search-item[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>/gi;
+    const cardMatches = Array.from(html.matchAll(cardPattern));
     
     const allUrls = [
-      ...urlMatches.map(m => m[1]),
-      ...relativeMatches.map(m => `https://www.pararius.nl${m[1]}`)
+      ...linkMatches.map(m => m[1].startsWith('http') ? m[1] : `https://www.pararius.nl${m[1]}`),
+      ...cardMatches.map(m => m[1].startsWith('http') ? m[1] : `https://www.pararius.nl${m[1]}`)
     ];
     
-    // Remove duplicates and filter for actual property pages
-    const uniqueUrls = [...new Set(allUrls)].filter(url => 
+    // Filter for actual property URLs and remove duplicates
+    const validUrls = [...new Set(allUrls)].filter(url => 
       url.includes('groningen') && 
       (url.includes('appartement') || url.includes('huis') || url.includes('woning')) &&
-      !url.includes('/huurwoningen/groningen')  // Exclude the main listing page
+      !url.includes('/huurwoningen/groningen') // Exclude main listing page
     );
     
-    console.log("Unique property URLs found:", uniqueUrls.length);
+    console.log("Valid property URLs found:", validUrls.length);
     
-    if (uniqueUrls.length > 0) {
-      for (let i = 0; i < Math.min(uniqueUrls.length, 8); i++) {
-        const url = uniqueUrls[i];
+    // If we found URLs, try to extract real data by fetching each property page
+    if (validUrls.length > 0) {
+      for (let i = 0; i < Math.min(validUrls.length, 6); i++) {
+        const url = validUrls[i];
         
-        // Extract street name and details from Pararius URL
-        // URL patterns: /appartement-te-huur/groningen/id/street-name or /huis-te-huur/groningen/id/street-name
-        const urlParts = url.split('/');
-        let streetAddress = 'Unknown Location';
-        let title = 'Property Listing';
-        let propertyType = 'apartment';
-        
-        if (urlParts.length >= 6) {
-          const typePart = urlParts[3]; // appartement-te-huur or huis-te-huur
-          const streetPart = urlParts[urlParts.length - 1]; // street name
+        try {
+          // Fetch the individual property page to get real data
+          const propResponse = await fetch(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
           
-          // Determine property type
-          if (typePart?.includes('huis')) {
-            propertyType = 'house';
-          } else if (typePart?.includes('appartement')) {
-            propertyType = 'apartment';
-          }
-          
-          // Clean up street name
-          if (streetPart && streetPart.length > 2 && !/^\d+$/.test(streetPart)) {
-            streetAddress = streetPart
-              .split('-')
-              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-              .join(' ');
+          if (propResponse.ok) {
+            const propHtml = await propResponse.text();
             
-            // Handle Dutch street suffixes properly
-            streetAddress = streetAddress
-              .replace(/straat/i, 'straat')
-              .replace(/laan/i, 'laan')
-              .replace(/weg/i, 'weg')
-              .replace(/gracht/i, 'gracht')
-              .replace(/plein/i, 'plein');
+            // Extract real property data from the page
+            const titleMatch = propHtml.match(/<h1[^>]*>(.*?)<\/h1>/);
+            const priceMatch = propHtml.match(/€\s*([0-9.,]+)/);
+            const addressMatch = propHtml.match(/<span[^>]*class="[^"]*address[^"]*"[^>]*>(.*?)<\/span>/) || 
+                                  propHtml.match(/<div[^>]*class="[^"]*address[^"]*"[^>]*>(.*?)<\/div>/);
+            const surfaceMatch = propHtml.match(/(\d+)\s*m²/);
+            const bedroomMatch = propHtml.match(/(\d+)\s*(?:bedroom|slaapkamer|kamers?)/i);
             
-            title = `${propertyType === 'house' ? 'House' : 'Apartment'} at ${streetAddress}`;
-          } else {
-            // Fallback for numeric or invalid street names
-            streetAddress = 'Groningen Center';
-            title = `${propertyType === 'house' ? 'House' : 'Apartment'} in Groningen`;
+            // Validate that this is a real property page
+            if (titleMatch && priceMatch) {
+              const title = extractText(titleMatch[1]).trim();
+              const priceText = priceMatch[1].replace(/[.,]/g, '');
+              const price = parseInt(priceText);
+              const address = addressMatch ? extractText(addressMatch[1]).trim() : 'Groningen';
+              const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
+              const bedrooms = bedroomMatch ? parseInt(bedroomMatch[1]) : null;
+              
+              // Only add if we have valid data
+              if (title && price > 0 && price < 5000) {
+                const property: Property = {
+                  external_id: `pararius:${url}`,
+                  source: 'pararius',
+                  title: title,
+                  description: `Property at ${address}`,
+                  price: price,
+                  address: address.includes('Groningen') ? address : `${address}, Groningen`,
+                  property_type: url.includes('huis') ? 'house' : 'apartment',
+                  bedrooms: bedrooms,
+                  surface_area: surface,
+                  url: url,
+                  image_urls: [],
+                  features: []
+                };
+                
+                properties.push(property);
+                console.log(`✅ Added REAL Pararius property: ${title} - €${price} - ${url}`);
+              } else {
+                console.log(`❌ Invalid property data for: ${url}`);
+              }
+            } else {
+              console.log(`❌ Could not extract data from: ${url}`);
+            }
           }
+        } catch (error) {
+          console.log(`❌ Failed to fetch property: ${url}`, error);
         }
         
-        // Generate realistic property data
-        const basePrice = propertyType === 'house' ? 1500 : 1200;
-        const price = basePrice + (i * 150) + Math.floor(Math.random() * 300);
-        
-        const property: Property = {
-          external_id: `pararius:${url}`,
-          source: 'pararius',
-          title: title,
-          description: `Quality ${propertyType} at ${streetAddress}, Groningen`,
-          price,
-          address: `${streetAddress}, Groningen, Netherlands`,
-          postal_code: `97${10 + Math.floor(Math.random() * 40)} ${['AB', 'CD', 'EF', 'GH'][Math.floor(Math.random() * 4)]}`,
-          property_type: propertyType,
-          bedrooms: 1 + Math.floor(Math.random() * 3),
-          bathrooms: 1,
-          surface_area: 55 + (i * 15) + Math.floor(Math.random() * 25),
-          url,
-          image_urls: [],
-          features: ['Available now', 'Modern', 'City center']
-        };
-        
-        properties.push(property);
-        console.log(`Added REAL Pararius property: ${title} - ${url}`);
+        // Add delay to be respectful to the server
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
     
-    // Enhanced fallback with real Groningen street names
+    // Only use fallback if we couldn't get any real data
     if (properties.length === 0) {
-      console.log("No properties extracted from Pararius, using enhanced fallback data");
-      const realProperties = [
-        { street: 'Oosterstraat', number: '45', price: 1350 },
-        { street: 'Herestraat', number: '23', price: 1500 },
-        { street: 'Nieuwe Ebbingestraat', number: '67', price: 1250 },
-        { street: 'Vismarkt', number: '12', price: 1400 }
-      ];
-      
-      for (let i = 0; i < Math.min(realProperties.length, 3); i++) {
-        const prop = realProperties[i];
-        const urlSlug = `${prop.street.toLowerCase().replace(/\s+/g, '-')}-${prop.number}`;
-        const url = `https://www.pararius.nl/appartement-te-huur/groningen/abc${123 + i}/${urlSlug}`;
-        
-        const property: Property = {
-          external_id: `pararius:${url}`,
-          source: 'pararius',
-          title: `${prop.street} ${prop.number}`,
-          description: `Modern apartment at ${prop.street} ${prop.number}, Groningen`,
-          price: prop.price,
-          address: `${prop.street} ${prop.number}, Groningen, Netherlands`,
-          postal_code: '9712 AB',
-          property_type: 'apartment',
-          bedrooms: 2,
-          bathrooms: 1,
-          surface_area: 65,
-          url,
-          image_urls: [],
-          features: ['City center', 'Modern', 'Available now']
-        };
-        
-        properties.push(property);
-        console.log(`Added enhanced fallback Pararius property: ${property.title} - ${url}`);
-      }
+      console.log("⚠️ No real properties found, scraper may be blocked or HTML structure changed");
+      throw new Error("Could not extract real property data");
     }
     
   } catch (error) {
-    console.error("Error scraping Pararius:", error);
-    // Enhanced error fallback
-    const fallbackProperty: Property = {
-      external_id: `pararius:https://www.pararius.nl/appartement-te-huur/groningen/abc123/oosterstraat-45`,
-      source: 'pararius',
-      title: 'Oosterstraat 45',
-      description: 'Quality apartment in Groningen city center',
-      price: 1350,
-      address: 'Oosterstraat 45, Groningen, Netherlands',
-      postal_code: '9712 CD',
-      property_type: 'apartment',
-      bedrooms: 2,
-      bathrooms: 1,
-      surface_area: 60,
-      url: 'https://www.pararius.nl/appartement-te-huur/groningen/abc123/oosterstraat-45',
-      image_urls: [],
-      features: ['Available now', 'City center']
-    };
-    properties.push(fallbackProperty);
+    console.error("❌ Error scraping Pararius:", error);
+    // Don't add fake data - let the scraper fail if no real data found
   }
   
   console.log(`Scraped ${properties.length} properties from Pararius`);
@@ -241,7 +188,6 @@ async function scrapeKamernet(): Promise<Property[]> {
   const properties: Property[] = [];
   
   try {
-    // Use the working Kamernet URL from your Selenium scraper
     const response = await fetch("https://kamernet.nl/huren/kamer-groningen", {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -260,157 +206,111 @@ async function scrapeKamernet(): Promise<Property[]> {
     const html = await response.text();
     console.log("Kamernet HTML fetched, length:", html.length);
     
-    // Extract property URLs using patterns based on your working Selenium selectors
-    // Looking for SearchResultCard_root links with proper href attributes
-    const cardPattern = /<a[^>]*class="[^"]*SearchResultCard_root[^"]*"[^>]*href="([^"]+)"[^>]*>/g;
-    const urlMatches = Array.from(html.matchAll(cardPattern));
-    console.log("Found Kamernet SearchResultCard URLs:", urlMatches.length);
+    // Look for property links in various patterns
+    const patterns = [
+      /<a[^>]*href="([^"]*\/huren\/[^"]*groningen[^"]*)"[^>]*>/gi,
+      /<a[^>]*href="([^"]*\/for-rent\/[^"]*groningen[^"]*)"[^>]*>/gi,
+      /href="(\/[^"]*(?:room|studio|apartment)[^"]*groningen[^"]*\/[^"]+)"/gi
+    ];
     
-    // Also try alternative URL patterns that might be present in the HTML
-    const alternativePattern = /href="(\/en\/for-rent\/(?:room|studio|apartment)-groningen\/[^"]+)"/g;
-    const altMatches = Array.from(html.matchAll(alternativePattern));
-    console.log("Found alternative Kamernet URLs:", altMatches.length);
+    const foundUrls = [];
+    for (const pattern of patterns) {
+      const matches = Array.from(html.matchAll(pattern));
+      foundUrls.push(...matches.map(m => m[1]));
+    }
     
-    const allMatches = [...urlMatches, ...altMatches];
+    // Convert relative URLs to absolute and filter valid ones
+    const validUrls = [...new Set(foundUrls)]
+      .map(url => url.startsWith('http') ? url : `https://kamernet.nl${url}`)
+      .filter(url => 
+        url.includes('groningen') && 
+        (url.includes('room') || url.includes('studio') || url.includes('apartment')) &&
+        !url.includes('/huren/kamer-groningen') // Exclude main listing page
+      );
     
-    if (allMatches.length > 0) {
-      for (let i = 0; i < Math.min(allMatches.length, 8); i++) {
-        const relativeUrl = allMatches[i][1];
-        let fullUrl = relativeUrl;
+    console.log("Valid Kamernet URLs found:", validUrls.length);
+    
+    if (validUrls.length > 0) {
+      for (let i = 0; i < Math.min(validUrls.length, 6); i++) {
+        const url = validUrls[i];
         
-        // Make sure we have a full URL
-        if (!fullUrl.startsWith('http')) {
-          fullUrl = fullUrl.startsWith('/') ? `https://kamernet.nl${relativeUrl}` : `https://kamernet.nl/${relativeUrl}`;
-        }
-        
-        // Extract street name from Kamernet URL properly
-        // URL structure: /huren/kamer-groningen/street-name/kamer-id
-        const urlParts = relativeUrl.split('/');
-        let streetName = 'Unknown Location';
-        let propertyType = 'room';
-        
-        if (urlParts.length >= 4) {
-          const streetPart = urlParts[urlParts.length - 2]; // Second to last part is street name
+        try {
+          // Fetch individual property page for real data
+          const propResponse = await fetch(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
           
-          if (streetPart && streetPart !== 'kamer-groningen' && !streetPart.startsWith('kamer-')) {
-            // Convert hyphenated street name to proper format
-            streetName = streetPart
-              .split('-')
-              .map(word => {
-                // Handle special Dutch prefixes (van, de, der, etc.)
-                if (['van', 'de', 'der', 'den', 'het', 'ter', 'ten'].includes(word.toLowerCase())) {
-                  return word.toLowerCase();
-                }
-                return word.charAt(0).toUpperCase() + word.slice(1);
-              })
-              .join(' ');
+          if (propResponse.ok) {
+            const propHtml = await propResponse.text();
             
-            // Add proper spacing for compound street names
-            streetName = streetName
-              .replace(/([a-z])([A-Z])/g, '$1 $2') // Add space between camelCase
-              .replace(/straat/i, 'straat')
-              .replace(/laan/i, 'laan') 
-              .replace(/weg/i, 'weg')
-              .replace(/gracht/i, 'gracht')
-              .replace(/plein/i, 'plein');
+            // Extract real data from the property page
+            const titleMatch = propHtml.match(/<h1[^>]*>(.*?)<\/h1>/) || 
+                               propHtml.match(/<title[^>]*>(.*?)<\/title>/);
+            const priceMatch = propHtml.match(/€\s*([0-9.,]+)/);
+            const addressMatch = propHtml.match(/Groningen[^<]*</) || 
+                                  propHtml.match(/address[^>]*>(.*?)</i);
+            const surfaceMatch = propHtml.match(/(\d+)\s*m²/);
+            
+            if (titleMatch && priceMatch) {
+              const title = extractText(titleMatch[1]).replace(/\s*-\s*Kamernet/, '').trim();
+              const priceText = priceMatch[1].replace(/[.,]/g, '');
+              const price = parseInt(priceText);
+              const address = addressMatch ? extractText(addressMatch[1]).trim() : 'Groningen';
+              const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
+              
+              // Determine property type from URL or content
+              let propertyType = 'room';
+              if (url.includes('studio') || title.toLowerCase().includes('studio')) {
+                propertyType = 'studio';
+              } else if (url.includes('apartment') || title.toLowerCase().includes('apartment')) {
+                propertyType = 'apartment';
+              }
+              
+              // Only add if we have valid data
+              if (title && price > 0 && price < 2000) {
+                const property: Property = {
+                  external_id: `kamernet:${url}`,
+                  source: 'kamernet',
+                  title: title,
+                  description: `Student ${propertyType} in Groningen`,
+                  price: price,
+                  address: address.includes('Groningen') ? address : `${address}, Groningen`,
+                  property_type: propertyType,
+                  bedrooms: propertyType === 'room' ? 1 : propertyType === 'studio' ? 1 : 2,
+                  surface_area: surface,
+                  url: url,
+                  image_urls: [],
+                  features: ['Student housing']
+                };
+                
+                properties.push(property);
+                console.log(`✅ Added REAL Kamernet property: ${title} - €${price} - ${url}`);
+              } else {
+                console.log(`❌ Invalid Kamernet data for: ${url}`);
+              }
+            } else {
+              console.log(`❌ Could not extract Kamernet data from: ${url}`);
+            }
           }
-          
-          // Determine property type from URL
-          if (relativeUrl.includes('studio')) {
-            propertyType = 'studio';
-          } else if (relativeUrl.includes('apartment')) {
-            propertyType = 'apartment';
-          }
+        } catch (error) {
+          console.log(`❌ Failed to fetch Kamernet property: ${url}`, error);
         }
         
-        // Generate realistic property data
-        const basePrice = propertyType === 'room' ? 450 : propertyType === 'studio' ? 650 : 750;
-        const price = basePrice + (i * 50) + Math.floor(Math.random() * 150);
-        
-        const property: Property = {
-          external_id: `kamernet:${fullUrl}`,
-          source: 'kamernet',
-          title: `${propertyType === 'studio' ? 'Studio' : propertyType === 'apartment' ? 'Apartment' : 'Room'} at ${streetName}`,
-          description: `Student ${propertyType} at ${streetName}, Groningen`,
-          price,
-          address: `${streetName}, Groningen, Netherlands`,
-          postal_code: '9700 AB',
-          property_type: propertyType,
-          bedrooms: propertyType === 'room' ? 1 : propertyType === 'studio' ? 1 : 2,
-          bathrooms: 1,
-          surface_area: propertyType === 'room' ? 15 + (i * 3) : propertyType === 'studio' ? 25 + (i * 5) : 35 + (i * 8),
-          url: fullUrl,
-          image_urls: [],
-          features: ['Student housing', 'Furnished', 'Available now']
-        };
-        
-        properties.push(property);
-        console.log(`Added REAL Kamernet property: ${property.title} - ${fullUrl}`);
+        // Add delay to be respectful
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
     
-    // Enhanced fallback with real street names from Groningen
     if (properties.length === 0) {
-      console.log("No URLs extracted, using enhanced fallback data");
-      const realStreets = [
-        { name: 'Paterswoldseweg', type: 'room' },
-        { name: 'Petrus Campersingel', type: 'room' },
-        { name: 'Westerkade', type: 'studio' },
-        { name: 'Slachthuisstraat', type: 'room' },
-        { name: 'Zandsteenlaan', type: 'apartment' }
-      ];
-      
-      for (let i = 0; i < Math.min(realStreets.length, 5); i++) {
-        const street = realStreets[i];
-        const propertyId = `${street.type}-${2325000 + Math.floor(Math.random() * 1000)}`;
-        const streetSlug = street.name.toLowerCase().replace(/\s+/g, '-');
-        const fullUrl = `https://kamernet.nl/en/for-rent/${street.type}-groningen/${streetSlug}/${propertyId}`;
-        
-        const basePrice = street.type === 'room' ? 450 : street.type === 'studio' ? 650 : 750;
-        const price = basePrice + (i * 75);
-        
-        const property: Property = {
-          external_id: `kamernet:${fullUrl}`,
-          source: 'kamernet',
-          title: street.name, // Just the street name like "Paterswoldseweg"
-          description: `Student ${street.type} at ${street.name}, Groningen`,
-          price,
-          address: `${street.name}, Groningen, Netherlands`,
-          postal_code: '9700 AB', 
-          property_type: street.type,
-          bedrooms: street.type === 'apartment' ? 2 : 1,
-          bathrooms: 1,
-          surface_area: street.type === 'room' ? 18 : street.type === 'studio' ? 28 : 45,
-          url: fullUrl,
-          image_urls: [],
-          features: ['Student housing', 'Furnished']
-        };
-        
-        properties.push(property);
-        console.log(`Added enhanced fallback Kamernet property: ${property.title} - ${fullUrl}`);
-      }
+      console.log("⚠️ No real Kamernet properties found, scraper may be blocked");
+      throw new Error("Could not extract real Kamernet property data");
     }
     
   } catch (error) {
-    console.error("Error scraping Kamernet:", error);
-    // Enhanced error fallback
-    const fallbackProperty = {
-      external_id: `kamernet:https://kamernet.nl/en/for-rent/room-groningen/paterswoldseweg/room-2325100`,
-      source: 'kamernet',
-      title: 'Room at Paterswoldseweg',
-      description: 'Student room at Paterswoldseweg, Groningen',
-      price: 525,
-      address: 'Paterswoldseweg, Groningen, Netherlands',
-      postal_code: '9700 AB',
-      property_type: 'room',
-      bedrooms: 1,
-      bathrooms: 1,
-      surface_area: 18,
-      url: 'https://kamernet.nl/en/for-rent/room-groningen/paterswoldseweg/room-2325100',
-      image_urls: [],
-      features: ['Student housing', 'Furnished']
-    };
-    properties.push(fallbackProperty);
+    console.error("❌ Error scraping Kamernet:", error);
+    // Don't add fake data - let the scraper fail if no real data found
   }
   
   console.log(`Scraped ${properties.length} properties from Kamernet`);
@@ -511,33 +411,44 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
     }
     
   } catch (error) {
-    console.error("Error scraping Grunoverhuur:", error);
-    // Always create realistic URLs even on error
-    const address = `hereweg-${100 + Math.floor(Math.random() * 200)}a`;
-    const fallbackProperty = {
-      external_id: `grunoverhuur:https://www.grunoverhuur.nl/woning/${address}`,
-      source: 'grunoverhuur',
-      title: 'Rental Property Groningen',
-      description: 'Quality rental property in Groningen',
-      price: 1400,
-      address: 'Hereweg, Groningen, Netherlands',
-      postal_code: '9700 AB',
-      property_type: 'apartment',
-      bedrooms: 2,
-      bathrooms: 1,
-      surface_area: 80,
-      url: `https://www.grunoverhuur.nl/woning/${address}`,
-      image_urls: [],
-      features: ['Available now']
-    };
-    properties.push(fallbackProperty);
+    console.error("❌ Error scraping Grunoverhuur:", error);
+    // Don't add fake data - let the scraper fail if no real data found
   }
   
   return properties;
 }
 
+// Helper function to validate URL accessibility
+async function validateUrl(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(url, { 
+      method: 'HEAD',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function saveProperties(supabase: any, properties: Property[], source: string) {
   console.log(`Saving ${properties.length} properties from ${source}`);
+  
+  // Validate URLs before saving
+  const validatedProperties = [];
+  for (const property of properties) {
+    const isValidUrl = await validateUrl(property.url);
+    if (isValidUrl) {
+      validatedProperties.push(property);
+      console.log(`✅ URL validated: ${property.url}`);
+    } else {
+      console.log(`❌ URL validation failed: ${property.url}`);
+    }
+  }
+  
+  console.log(`${validatedProperties.length}/${properties.length} properties passed URL validation`);
   
   const { data: existingProperties, error: fetchError } = await supabase
     .from('properties')
@@ -550,7 +461,7 @@ async function saveProperties(supabase: any, properties: Property[], source: str
   }
   
   const existingIds = new Set(existingProperties?.map((p: any) => p.external_id) || []);
-  const newProperties = properties.filter(p => !existingIds.has(p.external_id));
+  const newProperties = validatedProperties.filter(p => !existingIds.has(p.external_id));
   
   console.log(`${newProperties.length} new properties to save for ${source}`);
   
