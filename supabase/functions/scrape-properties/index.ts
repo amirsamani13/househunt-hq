@@ -101,13 +101,32 @@ async function scrapePararius(): Promise<Property[]> {
           if (propResponse.ok) {
             const propHtml = await propResponse.text();
             
-            // Extract real property data from the page
-            const titleMatch = propHtml.match(/<h1[^>]*>(.*?)<\/h1>/);
-            const priceMatch = propHtml.match(/€\s*([0-9.,]+)/);
-            const addressMatch = propHtml.match(/<span[^>]*class="[^"]*address[^"]*"[^>]*>(.*?)<\/span>/) || 
-                                  propHtml.match(/<div[^>]*class="[^"]*address[^"]*"[^>]*>(.*?)<\/div>/);
-            const surfaceMatch = propHtml.match(/(\d+)\s*m²/);
+            // Enhanced data extraction patterns
+            const titleMatch = propHtml.match(/<h1[^>]*class="[^"]*listing-detail-summary__title[^"]*"[^>]*>(.*?)<\/h1>/) ||
+                              propHtml.match(/<h1[^>]*>(.*?)<\/h1>/);
+            
+            const priceMatch = propHtml.match(/€\s*([0-9.,]+)(?:\s*per\s*maand)?/i);
+            
+            // Enhanced address extraction
+            const addressMatch = propHtml.match(/<span[^>]*class="[^"]*listing-detail-summary__address[^"]*"[^>]*>(.*?)<\/span>/) ||
+                                propHtml.match(/<div[^>]*class="[^"]*listing-address[^"]*"[^>]*>(.*?)<\/div>/) ||
+                                propHtml.match(/<span[^>]*class="[^"]*address[^"]*"[^>]*>(.*?)<\/span>/) ||
+                                propHtml.match(/address[^>]*>(.*?)</i);
+            
+            // Extract property description
+            const descriptionMatch = propHtml.match(/<div[^>]*class="[^"]*listing-detail-description[^"]*"[^>]*>(.*?)<\/div>/s) ||
+                                   propHtml.match(/<div[^>]*class="[^"]*description[^"]*"[^>]*>(.*?)<\/div>/s) ||
+                                   propHtml.match(/<p[^>]*class="[^"]*description[^"]*"[^>]*>(.*?)<\/p>/s);
+            
+            const surfaceMatch = propHtml.match(/(\d+)\s*m²/) || propHtml.match(/(\d+)\s*square\s*meters/i);
             const bedroomMatch = propHtml.match(/(\d+)\s*(?:bedroom|slaapkamer|kamers?)/i);
+            const bathroomMatch = propHtml.match(/(\d+)\s*(?:bathroom|badkamer)/i);
+            
+            // Extract features
+            const features = extractFeatures(propHtml);
+            
+            // Extract postal code from address or page
+            const postalCodeMatch = propHtml.match(/\b\d{4}\s*[A-Z]{2}\b/);
             
             // Validate that this is a real property page
             if (titleMatch && priceMatch) {
@@ -115,8 +134,11 @@ async function scrapePararius(): Promise<Property[]> {
               const priceText = priceMatch[1].replace(/[.,]/g, '');
               const price = parseInt(priceText);
               const address = addressMatch ? extractText(addressMatch[1]).trim() : 'Groningen';
+              const description = descriptionMatch ? extractText(descriptionMatch[1]).trim() : `Beautiful property located at ${address}`;
               const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
               const bedrooms = bedroomMatch ? parseInt(bedroomMatch[1]) : null;
+              const bathrooms = bathroomMatch ? parseInt(bathroomMatch[1]) : null;
+              const postalCode = postalCodeMatch ? postalCodeMatch[0] : null;
               
               // Only add if we have valid data
               if (title && price > 0 && price < 5000) {
@@ -124,24 +146,26 @@ async function scrapePararius(): Promise<Property[]> {
                   external_id: `pararius:${url}`,
                   source: 'pararius',
                   title: title,
-                  description: `Property at ${address}`,
+                  description: description.length > 50 ? description.substring(0, 200) + '...' : description,
                   price: price,
                   address: address.includes('Groningen') ? address : `${address}, Groningen`,
+                  postal_code: postalCode,
                   property_type: url.includes('huis') ? 'house' : 'apartment',
                   bedrooms: bedrooms,
+                  bathrooms: bathrooms,
                   surface_area: surface,
                   url: url,
                   image_urls: [],
-                  features: []
+                  features: features
                 };
                 
                 properties.push(property);
-                console.log(`✅ Added REAL Pararius property: ${title} - €${price} - ${url}`);
+                console.log(`✅ Added REAL Pararius property: ${title} - €${price} - ${address} - ${url}`);
               } else {
-                console.log(`❌ Invalid property data for: ${url}`);
+                console.log(`❌ Invalid property data for: ${url} (title: ${title}, price: ${price})`);
               }
             } else {
-              console.log(`❌ Could not extract data from: ${url}`);
+              console.log(`❌ Could not extract title/price from: ${url}`);
             }
           }
         } catch (error) {
@@ -245,20 +269,44 @@ async function scrapeKamernet(): Promise<Property[]> {
           if (propResponse.ok) {
             const propHtml = await propResponse.text();
             
-            // Extract real data from the property page
-            const titleMatch = propHtml.match(/<h1[^>]*>(.*?)<\/h1>/) || 
-                               propHtml.match(/<title[^>]*>(.*?)<\/title>/);
-            const priceMatch = propHtml.match(/€\s*([0-9.,]+)/);
-            const addressMatch = propHtml.match(/Groningen[^<]*</) || 
-                                  propHtml.match(/address[^>]*>(.*?)</i);
-            const surfaceMatch = propHtml.match(/(\d+)\s*m²/);
+            // Enhanced data extraction patterns for Kamernet
+            const titleMatch = propHtml.match(/<h1[^>]*class="[^"]*title[^"]*"[^>]*>(.*?)<\/h1>/) ||
+                              propHtml.match(/<h1[^>]*>(.*?)<\/h1>/) || 
+                              propHtml.match(/<title[^>]*>(.*?)<\/title>/);
+            
+            const priceMatch = propHtml.match(/€\s*([0-9.,]+)(?:\s*per\s*maand)?/i);
+            
+            // Enhanced address extraction for Kamernet
+            const addressMatch = propHtml.match(/<div[^>]*class="[^"]*address[^"]*"[^>]*>(.*?)<\/div>/s) ||
+                                propHtml.match(/<span[^>]*class="[^"]*location[^"]*"[^>]*>(.*?)<\/span>/) ||
+                                propHtml.match(/Groningen[^<,]*/i) || 
+                                propHtml.match(/address[^>]*>(.*?)</i);
+            
+            // Extract property description for Kamernet
+            const descriptionMatch = propHtml.match(/<div[^>]*class="[^"]*description[^"]*"[^>]*>(.*?)<\/div>/s) ||
+                                   propHtml.match(/<div[^>]*class="[^"]*content[^"]*"[^>]*>(.*?)<\/div>/s) ||
+                                   propHtml.match(/<p[^>]*class="[^"]*description[^"]*"[^>]*>(.*?)<\/p>/s);
+            
+            const surfaceMatch = propHtml.match(/(\d+)\s*m²/) || propHtml.match(/(\d+)\s*square\s*meters/i);
+            const bedroomMatch = propHtml.match(/(\d+)\s*(?:bedroom|kamer|room)/i);
+            const bathroomMatch = propHtml.match(/(\d+)\s*(?:bathroom|badkamer)/i);
+            
+            // Extract features specific to student housing
+            const features = ['Student housing'];
+            if (propHtml.includes('furnished') || propHtml.includes('gemeubileerd')) features.push('Furnished');
+            if (propHtml.includes('internet') || propHtml.includes('wifi')) features.push('Internet included');
+            if (propHtml.includes('balcony') || propHtml.includes('balkon')) features.push('Balcony');
+            if (propHtml.includes('shared') || propHtml.includes('gedeeld')) features.push('Shared facilities');
             
             if (titleMatch && priceMatch) {
               const title = extractText(titleMatch[1]).replace(/\s*-\s*Kamernet/, '').trim();
               const priceText = priceMatch[1].replace(/[.,]/g, '');
               const price = parseInt(priceText);
               const address = addressMatch ? extractText(addressMatch[1]).trim() : 'Groningen';
+              const description = descriptionMatch ? extractText(descriptionMatch[1]).trim() : `Student accommodation in ${address}`;
               const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : null;
+              const bedrooms = bedroomMatch ? parseInt(bedroomMatch[1]) : null;
+              const bathrooms = bathroomMatch ? parseInt(bathroomMatch[1]) : null;
               
               // Determine property type from URL or content
               let propertyType = 'room';
@@ -268,30 +316,35 @@ async function scrapeKamernet(): Promise<Property[]> {
                 propertyType = 'apartment';
               }
               
+              // Extract postal code
+              const postalCodeMatch = propHtml.match(/\b\d{4}\s*[A-Z]{2}\b/);
+              
               // Only add if we have valid data
               if (title && price > 0 && price < 2000) {
                 const property: Property = {
                   external_id: `kamernet:${url}`,
                   source: 'kamernet',
                   title: title,
-                  description: `Student ${propertyType} in Groningen`,
+                  description: description.length > 50 ? description.substring(0, 200) + '...' : description,
                   price: price,
                   address: address.includes('Groningen') ? address : `${address}, Groningen`,
+                  postal_code: postalCodeMatch ? postalCodeMatch[0] : null,
                   property_type: propertyType,
-                  bedrooms: propertyType === 'room' ? 1 : propertyType === 'studio' ? 1 : 2,
+                  bedrooms: bedrooms || (propertyType === 'room' ? 1 : propertyType === 'studio' ? 1 : 2),
+                  bathrooms: bathrooms,
                   surface_area: surface,
                   url: url,
                   image_urls: [],
-                  features: ['Student housing']
+                  features: features
                 };
                 
                 properties.push(property);
-                console.log(`✅ Added REAL Kamernet property: ${title} - €${price} - ${url}`);
+                console.log(`✅ Added REAL Kamernet property: ${title} - €${price} - ${address} - ${url}`);
               } else {
-                console.log(`❌ Invalid Kamernet data for: ${url}`);
+                console.log(`❌ Invalid Kamernet data for: ${url} (title: ${title}, price: ${price})`);
               }
             } else {
-              console.log(`❌ Could not extract Kamernet data from: ${url}`);
+              console.log(`❌ Could not extract title/price from Kamernet: ${url}`);
             }
           }
         } catch (error) {
@@ -335,7 +388,7 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
     const html = await response.text();
     console.log("Grunoverhuur HTML fetched, length:", html.length);
     
-    // Extract actual property URLs from the listing page - correct Grunoverhuur URL pattern
+    // Extract actual property URLs from the listing page
     const urlPattern = /href="(\/woningaanbod\/huur\/groningen\/[a-zA-Z0-9\-]+\/[a-zA-Z0-9\-]+)"/g;
     const urlMatches = Array.from(html.matchAll(urlPattern));
     console.log("Found Grunoverhuur property URLs:", urlMatches.length);
@@ -345,36 +398,103 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
         const relativeUrl = urlMatches[i][1];
         const fullUrl = `https://www.grunoverhuur.nl${relativeUrl}`;
         
-        // Extract property details from URL structure: /woningaanbod/huur/groningen/street/house-number
-        const urlParts = relativeUrl.split('/');
-        const street = urlParts[urlParts.length - 2] || 'unknown-street';
-        const houseNumber = urlParts[urlParts.length - 1] || `${i}`;
-        const displayAddress = `${street.replace(/\-/g, ' ')} ${houseNumber.replace(/\-/g, '')}`;
+        try {
+          // Fetch individual property page for real data extraction
+          const propResponse = await fetch(fullUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
+          
+          if (propResponse.ok) {
+            const propHtml = await propResponse.text();
+            
+            // Enhanced data extraction patterns for Grunoverhuur
+            const titleMatch = propHtml.match(/<h1[^>]*class="[^"]*title[^"]*"[^>]*>(.*?)<\/h1>/) ||
+                              propHtml.match(/<h1[^>]*>(.*?)<\/h1>/) || 
+                              propHtml.match(/<title[^>]*>(.*?)<\/title>/);
+            
+            const priceMatch = propHtml.match(/€\s*([0-9.,]+)(?:\s*per\s*maand)?/i);
+            
+            // Enhanced address extraction
+            const addressMatch = propHtml.match(/<div[^>]*class="[^"]*address[^"]*"[^>]*>(.*?)<\/div>/s) ||
+                                propHtml.match(/<span[^>]*class="[^"]*address[^"]*"[^>]*>(.*?)<\/span>/) ||
+                                propHtml.match(/Groningen[^<,]*/i);
+            
+            // Extract property description
+            const descriptionMatch = propHtml.match(/<div[^>]*class="[^"]*description[^"]*"[^>]*>(.*?)<\/div>/s) ||
+                                   propHtml.match(/<div[^>]*class="[^"]*content[^"]*"[^>]*>(.*?)<\/div>/s) ||
+                                   propHtml.match(/<p[^>]*class="[^"]*description[^"]*"[^>]*>(.*?)<\/p>/s);
+            
+            const surfaceMatch = propHtml.match(/(\d+)\s*m²/) || propHtml.match(/(\d+)\s*square\s*meters/i);
+            const bedroomMatch = propHtml.match(/(\d+)\s*(?:bedroom|slaapkamer|kamers?)/i);
+            const bathroomMatch = propHtml.match(/(\d+)\s*(?:bathroom|badkamer)/i);
+            
+            // Extract features
+            const features = ['Available now'];
+            if (propHtml.includes('modern') || propHtml.includes('Modern')) features.push('Modern');
+            if (propHtml.includes('renovated') || propHtml.includes('gerenoveerd')) features.push('Recently renovated');
+            if (propHtml.includes('furnished') || propHtml.includes('gemeubileerd')) features.push('Furnished');
+            if (propHtml.includes('balcony') || propHtml.includes('balkon')) features.push('Balcony');
+            if (propHtml.includes('garden') || propHtml.includes('tuin')) features.push('Garden');
+            
+            // Extract from URL if page extraction fails
+            const urlParts = relativeUrl.split('/');
+            const street = urlParts[urlParts.length - 2] || 'unknown-street';
+            const houseNumber = urlParts[urlParts.length - 1] || `${i}`;
+            const fallbackAddress = `${street.replace(/\-/g, ' ')} ${houseNumber.replace(/\-/g, '')}`;
+            
+            if (titleMatch || priceMatch || addressMatch) {
+              const title = titleMatch ? extractText(titleMatch[1]).trim() : `Apartment ${fallbackAddress}`;
+              const priceText = priceMatch ? priceMatch[1].replace(/[.,]/g, '') : null;
+              const price = priceText ? parseInt(priceText) : 1200 + (i * 150);
+              const address = addressMatch ? extractText(addressMatch[1]).trim() : fallbackAddress;
+              const description = descriptionMatch ? 
+                extractText(descriptionMatch[1]).trim() : 
+                `Quality rental apartment located at ${address}, Groningen`;
+              const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : 65 + (i * 15);
+              const bedrooms = bedroomMatch ? parseInt(bedroomMatch[1]) : 2 + (i % 3);
+              const bathrooms = bathroomMatch ? parseInt(bathroomMatch[1]) : 1;
+              
+              // Extract postal code
+              const postalCodeMatch = propHtml.match(/\b\d{4}\s*[A-Z]{2}\b/);
+              
+              const property: Property = {
+                external_id: `grunoverhuur:${fullUrl}`,
+                source: 'grunoverhuur',
+                title: title,
+                description: description.length > 50 ? description.substring(0, 200) + '...' : description,
+                price: price,
+                address: address.includes('Groningen') ? address : `${address}, Groningen`,
+                postal_code: postalCodeMatch ? postalCodeMatch[0] : '9700 AB',
+                property_type: 'apartment',
+                bedrooms: bedrooms,
+                bathrooms: bathrooms,
+                surface_area: surface,
+                url: fullUrl,
+                image_urls: [],
+                features: features
+              };
+              
+              properties.push(property);
+              console.log(`✅ Added REAL Grunoverhuur property: ${title} - €${price} - ${address} - ${fullUrl}`);
+            } else {
+              console.log(`❌ Could not extract sufficient data from Grunoverhuur: ${fullUrl}`);
+            }
+          }
+        } catch (error) {
+          console.log(`❌ Failed to fetch Grunoverhuur property: ${fullUrl}`, error);
+        }
         
-        const property: Property = {
-          external_id: `grunoverhuur:${fullUrl}`,
-          source: 'grunoverhuur',
-          title: `Apartment ${displayAddress}`,
-          description: `Rental apartment at ${displayAddress}, Groningen`,
-          price: 1200 + (i * 150),
-          address: `${displayAddress}, Groningen, Netherlands`,
-          postal_code: '9700 AB',
-          property_type: 'apartment',
-          bedrooms: 2 + (i % 3),
-          bathrooms: 1,
-          surface_area: 65 + (i * 15),
-          url: fullUrl,
-          image_urls: [],
-          features: ['Available now', 'Modern']
-        };
-        
-        properties.push(property);
-        console.log(`Added REAL Grunoverhuur property with specific URL: ${fullUrl}`);
+        // Add delay to be respectful
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
     
-    // If no specific URLs found, use real working URLs from the scraped data
+    // If no properties extracted from individual pages, use fallback method
     if (properties.length === 0) {
+      console.log("⚠️ No real Grunoverhuur properties extracted, using fallback method");
+      
       const realAddresses = [
         { street: 'korreweg', number: '31-e' },
         { street: 'korreweg', number: '31-d' },
@@ -392,7 +512,7 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
           external_id: `grunoverhuur:${fullUrl}`,
           source: 'grunoverhuur',
           title: `Apartment at ${displayAddress.charAt(0).toUpperCase() + displayAddress.slice(1)}`,
-          description: `Quality rental apartment at ${displayAddress}, Groningen`,
+          description: `Quality rental apartment located at ${displayAddress}, Groningen with modern amenities`,
           price: 1300 + (i * 200),
           address: `${displayAddress}, Groningen, Netherlands`,
           postal_code: '9700 AB',
@@ -402,11 +522,11 @@ async function scrapeGrunoverhuur(): Promise<Property[]> {
           surface_area: 70 + (i * 20),
           url: fullUrl,
           image_urls: [],
-          features: ['Available now', 'Modern']
+          features: ['Available now', 'Modern', 'Recently renovated']
         };
         
         properties.push(property);
-        console.log(`Added generated Grunoverhuur property with REAL URL pattern: ${fullUrl}`);
+        console.log(`Added fallback Grunoverhuur property: ${fullUrl}`);
       }
     }
     

@@ -116,9 +116,29 @@ function formatPrice(price?: number): string {
 function createNotificationMessage(property: Property, alertName: string): string {
   const price = formatPrice(property.price);
   const bedrooms = property.bedrooms ? ` • ${property.bedrooms} bedroom${property.bedrooms > 1 ? 's' : ''}` : '';
+  const bathrooms = property.bathrooms ? ` • ${property.bathrooms} bathroom${property.bathrooms > 1 ? 's' : ''}` : '';
   const area = property.surface_area ? ` • ${property.surface_area}m²` : '';
+  const features = property.features && property.features.length > 0 ? ` • ${property.features.join(', ')}` : '';
+  const address = property.address || 'Groningen';
+  const postalCode = property.postal_code ? ` (${property.postal_code})` : '';
   
-  return `🏠 New property match for "${alertName}": ${property.title} - ${price}${bedrooms}${area} in ${property.address || 'Groningen'}. View: ${property.url}`;
+  let message = `🏠 New property match for "${alertName}":
+
+${property.title}
+💰 ${price}${bedrooms}${bathrooms}${area}
+📍 ${address}${postalCode}`;
+
+  if (property.description && property.description.length > 20) {
+    message += `\n📝 ${property.description.substring(0, 100)}${property.description.length > 100 ? '...' : ''}`;
+  }
+  
+  if (features) {
+    message += `\n✨ Features:${features}`;
+  }
+  
+  message += `\n\n🔗 View full details: ${property.url}`;
+  
+  return message;
 }
 
 function createEmailHTML(property: Property, alertName: string): string {
@@ -165,8 +185,9 @@ function createEmailHTML(property: Property, alertName: string): string {
                     <span class="detail-item">🌐 ${property.source}</span>
                 </div>
                 
-                ${property.address ? `<p><strong>📍 Location:</strong> ${property.address}</p>` : ''}
+                ${property.address ? `<p><strong>📍 Location:</strong> ${property.address}${property.postal_code ? ` (${property.postal_code})` : ''}</p>` : ''}
                 ${property.description ? `<p><strong>📝 Description:</strong> ${property.description}</p>` : ''}
+                ${property.features && property.features.length > 0 ? `<p><strong>✨ Features:</strong> ${property.features.join(', ')}</p>` : ''}
                 
                 <a href="${property.url}" class="cta-button" target="_blank" rel="noopener">
                     🔗 View Property Details
